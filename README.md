@@ -60,8 +60,12 @@ pip install playwright && playwright install chromium
 # from repo root:
 python -m scraper.run --dry-run          # collect & print, don't save
 python -m scraper.run                     # collect, enrich with LINZ, save, rescore
+python -m scraper.run --estimates         # also pull homes.co.nz/OneRoof estimates (slower)
+python -m scraper.run --rates-only        # just refresh mortgage rates from interest.co.nz
 ```
-The backend also scrapes automatically every `SCRAPE_INTERVAL_HOURS`.
+The backend also scrapes listings + refreshes rates automatically every
+`SCRAPE_INTERVAL_HOURS`. Mortgage rates can also be refreshed live from the
+Insights page, and chat embeddings rebuilt from Settings.
 
 > ⚠️ Scraping is for personal use only: honour each site's robots.txt/terms, keep the throttle on,
 > and don't redistribute scraped data. A free **LINZ API key** (https://data.linz.govt.nz/) enables
@@ -83,8 +87,10 @@ cd backend && python -m pytest -q
   0–100 score with rentability emphasised.
 - **Finance:** mortgage P&I, boarder income with the **IRD $245/wk-per-boarder tax-free** rule
   (max 4), **accelerated-payoff simulator** ("years to mortgage-free"), yield & cashflow.
-- **AI:** per-listing pros/cons & negotiation angles, RAG chat over your matches, and a
-  mortgage/investment advisor — all on local Gemma.
-- **Insights:** suburb affordability-vs-yield table and current mortgage rates.
+- **AI:** per-listing pros/cons & negotiation angles, embedding-backed RAG chat over your
+  matches (with score-ordered fallback), and a mortgage/investment advisor — all on local Gemma.
+- **Insights:** suburb affordability-vs-yield table and live mortgage rates (interest.co.nz).
+- **Map:** MapLibre listings map with score-coloured price markers (free OSM basemap).
+- **Enrichment:** free LINZ land area + homes.co.nz/OneRoof estimates, RV and rental estimates.
 
 See `docs/` for the data-source notes and roadmap.

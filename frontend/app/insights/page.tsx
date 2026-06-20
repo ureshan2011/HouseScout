@@ -6,11 +6,27 @@ import { api, fmt } from "@/lib/api";
 export default function Insights() {
   const [suburbs, setSuburbs] = useState<any[]>([]);
   const [rates, setRates] = useState<any[]>([]);
+  const [rateMsg, setRateMsg] = useState("");
 
   useEffect(() => {
     api.suburbs().then(setSuburbs);
     api.rates().then(setRates);
   }, []);
+
+  async function refreshRates() {
+    setRateMsg("Fetching live rates…");
+    try {
+      const r = await api.refreshRates();
+      if (r.ok) {
+        setRateMsg(`Updated ${r.count} rates from interest.co.nz.`);
+        api.rates().then(setRates);
+      } else {
+        setRateMsg(`Couldn’t refresh: ${r.error}`);
+      }
+    } catch (e) {
+      setRateMsg(String(e));
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -48,7 +64,11 @@ export default function Insights() {
       </section>
 
       <section className="card p-4">
-        <h2 className="mb-3 font-semibold">Current mortgage rates (lowest by term)</h2>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-semibold">Current mortgage rates (lowest by term)</h2>
+          <button className="btn-ghost" onClick={refreshRates}>Refresh from interest.co.nz</button>
+        </div>
+        {rateMsg && <p className="mb-2 text-xs text-slate-500">{rateMsg}</p>}
         <div className="flex flex-wrap gap-3">
           {rates.map((r, i) => (
             <div key={i} className="rounded-lg bg-slate-50 px-4 py-3">

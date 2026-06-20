@@ -1,8 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { api, Listing } from "@/lib/api";
 import { ListingCard } from "@/components/ListingCard";
+
+// MapLibre touches `window`, so load it client-side only.
+const ListingsMap = dynamic(() => import("@/components/ListingsMap").then((m) => m.ListingsMap), {
+  ssr: false,
+  loading: () => <p className="text-sm text-slate-500">Loading map…</p>,
+});
 
 export default function ListingsPage() {
   const [listings, setListings] = useState<Listing[]>([]);
@@ -12,6 +19,7 @@ export default function ListingsPage() {
   const [minBeds, setMinBeds] = useState("");
   const [garageOnly, setGarageOnly] = useState(true);
   const [passesOnly, setPassesOnly] = useState(true);
+  const [view, setView] = useState<"grid" | "map">("grid");
 
   function load() {
     setLoading(true);
@@ -28,7 +36,17 @@ export default function ListingsPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Listings</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Listings</h1>
+        <div className="flex rounded-lg border border-slate-300 text-sm">
+          <button className={`px-3 py-1.5 ${view === "grid" ? "bg-brand text-white" : ""}`} onClick={() => setView("grid")}>
+            Grid
+          </button>
+          <button className={`px-3 py-1.5 ${view === "map" ? "bg-brand text-white" : ""}`} onClick={() => setView("map")}>
+            Map
+          </button>
+        </div>
+      </div>
 
       <div className="card flex flex-wrap items-end gap-3 p-4">
         <Field label="Sort">
@@ -58,6 +76,8 @@ export default function ListingsPage() {
         <p className="text-sm text-slate-500">Loading…</p>
       ) : listings.length === 0 ? (
         <p className="text-sm text-slate-500">No listings match. Loosen filters or run a scrape.</p>
+      ) : view === "map" ? (
+        <ListingsMap listings={listings} />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {listings.map((l) => (

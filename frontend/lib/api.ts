@@ -75,6 +75,8 @@ export const api = {
     }),
   financeDefaults: () => j<any>("/api/finance/defaults"),
   aiHealth: () => j<any>("/api/ai/health"),
+  reindex: () => j<any>("/api/ai/reindex", { method: "POST" }),
+  refreshRates: () => j<any>("/api/rates/refresh", { method: "POST" }),
   insight: (id: number, refresh = false) =>
     j<any>(`/api/ai/insight/${id}?refresh=${refresh}`, { method: "POST" }),
   chat: (question: string) =>

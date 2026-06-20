@@ -59,6 +59,23 @@ BOARDER_WEEKLY_RENT=${defaults.weekly_rent}`}
         ) : (
           <p className="mt-1 text-xs text-slate-500">Start LM Studio, load a Gemma model, enable the local server on port 1234.</p>
         )}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            className="btn-ghost"
+            onClick={async () => {
+              setMsg("Reindexing embeddings…");
+              try {
+                const r = await api.reindex();
+                setMsg(r.ok ? `Indexed ${r.indexed} listing(s) for semantic chat.` : `Reindex skipped: ${r.reason}`);
+              } catch (e) {
+                setMsg(String(e));
+              }
+            }}
+          >
+            Rebuild chat embeddings
+          </button>
+          <span className="text-xs text-slate-400">Needs an embedding model loaded in LM Studio.</span>
+        </div>
       </section>
 
       <section className="card p-4">

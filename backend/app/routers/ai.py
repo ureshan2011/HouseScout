@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
-from ..ai import client, insights
+from ..ai import client, embeddings, insights
 from ..db import get_db
 from ..finance_service import analyse_listing
-from ..models import AIInsight, Listing, Score
+from ..models import AIInsight, Listing
 from ..schemas import AdvisorRequest, AIResponse, ChatRequest
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
@@ -58,18 +57,16 @@ def insight(listing_id: int, db: Session = Depends(get_db), refresh: bool = Fals
     return AIResponse(**result)
 
 
+@router.post("/reindex")
+def reindex(db: Session = Depends(get_db), refresh: bool = False):
+    """Build/refresh listing embeddings for semantic chat retrieval."""
+    return embeddings.reindex(db, refresh=refresh)
+
+
 @router.post("/chat", response_model=AIResponse)
 def chat(req: ChatRequest, db: Session = Depends(get_db)):
-    """RAG-lite: retrieve top-scoring passing listings and ground the answer in them."""
-    stmt = (
-        select(Listing)
-        .options(selectinload(Listing.enrichment), selectinload(Listing.score))
-        .join(Score, isouter=True)
-        .where(Listing.status == "active", Score.passes_filters.is_(True))
-        .order_by(Score.match_score.desc().nullslast())
-        .limit(req.limit)
-    )
-    rows = db.execute(stmt).scalars().unique().all()
+    """RAG: retrieve relevant listings (semantic if embeddings exist, else by score)."""
+    rows, _used_embeddings = embeddings.retrieve(db, req.question, k=req.limit)
     context = []
     for r in rows:
         fin = analyse_listing(r)

@@ -7,11 +7,20 @@ from __future__ import annotations
 
 import logging
 
+import sys
+from datetime import datetime
+
+from .config import REPO_ROOT
 from .db import SessionLocal
-from .models import Listing, ListingImage, PricePoint, PropertyEnrichment
+from .models import Listing, ListingImage, MortgageRate, PricePoint, PropertyEnrichment
 from .scoring_service import rescore_all
 
 log = logging.getLogger(__name__)
+
+# The standalone `scraper` package lives at the repo root; make it importable even
+# when the backend is launched from the backend/ directory.
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 def upsert_listing(db, item: dict) -> Listing:
@@ -55,6 +64,31 @@ def upsert_listing(db, item: dict) -> Listing:
                 setattr(enr, k, v)
         listing.enrichment = enr
     return listing
+
+
+def refresh_rates() -> dict:
+    """Scrape interest.co.nz and replace the mortgage_rates table with fresh values."""
+    try:
+        from scraper.rates import scrape as scrape_rates
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Rates scraper unavailable: %s", exc)
+        return {"ok": False, "error": str(exc), "count": 0}
+
+    rows = scrape_rates()
+    if not rows:
+        return {"ok": False, "error": "no rates parsed", "count": 0}
+
+    db = SessionLocal()
+    try:
+        db.query(MortgageRate).delete()
+        now = datetime.utcnow()
+        for r in rows:
+            db.add(MortgageRate(bank=r["bank"], term_label=r["term_label"],
+                                rate=r["rate"], observed_at=now))
+        db.commit()
+        return {"ok": True, "count": len(rows)}
+    finally:
+        db.close()
 
 
 def run_scrape(dry_run: bool = True) -> dict:

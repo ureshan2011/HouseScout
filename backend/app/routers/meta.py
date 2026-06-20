@@ -58,3 +58,11 @@ def trigger_scrape(background: BackgroundTasks, dry_run: bool = True):
 
     background.add_task(run_scrape, dry_run)
     return {"started": True, "dry_run": dry_run}
+
+
+@router.post("/rates/refresh")
+def refresh_rates_now():
+    """Scrape interest.co.nz and update the mortgage rate table."""
+    from ..scraper_hook import refresh_rates
+
+    return refresh_rates()

@@ -82,3 +82,31 @@ def parse_int(text: str | None) -> int | None:
         return None
     m = re.search(r"\d+", str(text))
     return int(m.group()) if m else None
+
+
+_RENT_RE = re.compile(r"\$?\s*(\d{2,4})")
+
+
+def parse_rent(text: str | None) -> float | None:
+    """Parse a weekly rent figure (plausible NZ band $50–$2000/wk)."""
+    if not text:
+        return None
+    for m in _RENT_RE.findall(text.replace(",", "")):
+        val = float(m)
+        if 50 <= val <= 2000:
+            return val
+    return None
+
+
+_MONEY_RE = re.compile(r"\$?\s*([\d,]{4,})")
+
+
+def parse_money_range(text: str | None) -> float | None:
+    """Parse a single price or a range ('$650,000 - $710,000') to a midpoint float."""
+    if not text:
+        return None
+    nums = [float(m.replace(",", "")) for m in _MONEY_RE.findall(text)]
+    nums = [n for n in nums if n > 1000]
+    if not nums:
+        return None
+    return round(sum(nums) / len(nums), 0)

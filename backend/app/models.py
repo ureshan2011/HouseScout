@@ -158,6 +158,19 @@ class AIInsight(Base):
     listing: Mapped[Listing] = relationship(back_populates="insights")
 
 
+class Embedding(Base):
+    __tablename__ = "embeddings"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    listing_id: Mapped[int] = mapped_column(ForeignKey("listings.id"), unique=True, index=True)
+    model: Mapped[str] = mapped_column(String(120))
+    dim: Mapped[int] = mapped_column(Integer)
+    vector: Mapped[list] = mapped_column(JSON)  # stored as JSON list; numpy cosine at this scale
+    text: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class Favorite(Base):
     __tablename__ = "favorites"
     id: Mapped[int] = mapped_column(primary_key=True)

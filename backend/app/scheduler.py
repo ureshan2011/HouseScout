@@ -17,12 +17,16 @@ _scheduler: BackgroundScheduler | None = None
 
 
 def _job() -> None:
-    from .scraper_hook import run_scrape
+    from .scraper_hook import refresh_rates, run_scrape
 
     try:
         run_scrape(dry_run=False)
     except Exception as exc:  # noqa: BLE001
         log.warning("Scheduled scrape failed: %s", exc)
+    try:
+        refresh_rates()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Scheduled rate refresh failed: %s", exc)
 
 
 def start_scheduler() -> None:

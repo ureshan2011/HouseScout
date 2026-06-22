@@ -1,8 +1,12 @@
 name: Deploy to GitHub Pages
 
-# Scrapes multiple listing sources in parallel (each on its own runner = different
-# IP + browser signature), merges + dedupes them, builds the Next.js static export,
-# and publishes it to GitHub Pages. Runs on push to main and every 6 hours.
+# Multi-runner scraping strategy:
+#   1. API scrapers (fast, no browser) — always succeed as baseline
+#   2. Playwright scrapers (richer data) — one per source, different browser/IP
+#   3. Merge all results, dedupe, build static site, deploy
+#
+# This ensures the site always has content (API scrapers are reliable fallback)
+# while the Playwright scrapers add richer data when they can get through.
 
 on:
   push:
@@ -23,11 +27,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # ---- parallel scrape "agents": one per source, varied browser engines ---- #
-  scrape:
+  # ---- Runner 0: API-based scrapers (fast, no Playwright needed) ---- #
+  scrape-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pillow
+
+      - name: Run API scrapers + seed data
+        run: python scripts/build_listings.py
+
+      - name: Expand with additional sources
+        run: python scripts/expand_listings.py
+
+      - name: Upload API results
+        uses: actions/upload-artifact@v4
+        with:
+          name: partial-api
+          if-no-files-found: ignore
+          path: |
+            frontend/public/listings.json
+            frontend/public/partials/
+            frontend/public/photos/
+
+  # ---- Runners 1-3: Playwright scrapers (richer data, may get blocked) ---- #
+  scrape-browser:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false # one blocked site must not cancel the others
+      fail-fast: false
       matrix:
         include:
           - source: realestate.co.nz
@@ -69,12 +102,11 @@ jobs:
             frontend/public/photos/
 
   build:
-    needs: scrape
+    needs: [scrape-api, scrape-browser]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # Force Pages "Source" to GitHub Actions (idempotent).
       - name: Setup Pages
         uses: actions/configure-pages@v5
         with:
@@ -84,14 +116,22 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Download scraped partials + photos
+      - name: Download all scraped data
         uses: actions/download-artifact@v4
         with:
           path: frontend/public
           merge-multiple: true
 
-      - name: Merge + dedupe listings
-        run: python scripts/merge_listings.py
+      - name: Merge + dedupe all listings
+        run: |
+          # If Playwright scrapers produced partials, merge them into listings.json
+          if [ -d frontend/public/partials ] && [ "$(ls frontend/public/partials/*.json 2>/dev/null)" ]; then
+            python scripts/merge_listings.py
+          else
+            echo "No browser partials found; using API-scraped listings.json"
+          fi
+          echo "Final listing count:"
+          python -c "import json; d=json.load(open('frontend/public/listings.json')); print(f'  {len(d)} listings from {len(set(l.get(\"suburb\",\"?\") for l in d))} suburbs')"
 
       - uses: actions/setup-node@v4
         with:
@@ -119,7 +159,6 @@ jobs:
 
   deploy:
     needs: build
-    # The github-pages environment only allows deployments from the default branch.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:

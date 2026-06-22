@@ -57,18 +57,26 @@ export const DEFAULTS = {
   weekly_rent: 220,
 };
 
-// Affordable Christchurch suburbs (illustrative figures).
+// Affordable Christchurch suburbs (illustrative figures, June 2026).
 export const SUBURBS: Suburb[] = [
-  { name: "Aranui", median_price: 430_000, median_rent_weekly: 480, rental_yield: 5.8, distance_cbd_km: 22, growth_5yr_pct: 8.0, notes: "Affordable east-side; rising rental demand." },
-  { name: "Hornby", median_price: 510_000, median_rent_weekly: 540, rental_yield: 5.5, distance_cbd_km: 19, growth_5yr_pct: 11.0, notes: "West; near industry/transport, strong rentals." },
-  { name: "Hoon Hay", median_price: 560_000, median_rent_weekly: 560, rental_yield: 5.2, distance_cbd_km: 25, growth_5yr_pct: 6.0, notes: "Popular SW family suburb." },
-  { name: "Linwood", median_price: 460_000, median_rent_weekly: 510, rental_yield: 5.8, distance_cbd_km: 24, growth_5yr_pct: 4.0, notes: "Close to CBD, gentrifying." },
-  { name: "Woolston", median_price: 480_000, median_rent_weekly: 520, rental_yield: 5.6, distance_cbd_km: 21, growth_5yr_pct: 5.5, notes: "Inner-east, good value." },
-  { name: "New Brighton", median_price: 470_000, median_rent_weekly: 500, rental_yield: 5.5, distance_cbd_km: 18, growth_5yr_pct: 9.0, notes: "Coastal east; regeneration underway." },
-  { name: "Bishopdale", median_price: 590_000, median_rent_weekly: 560, rental_yield: 4.9, distance_cbd_km: 23, growth_5yr_pct: 7.0, notes: "Established NW suburb." },
-  { name: "Phillipstown", median_price: 450_000, median_rent_weekly: 500, rental_yield: 5.8, distance_cbd_km: 26, growth_5yr_pct: 3.0, notes: "Very central, smaller sections." },
-  { name: "Wainoni", median_price: 440_000, median_rent_weekly: 480, rental_yield: 5.7, distance_cbd_km: 20, growth_5yr_pct: 8.5, notes: "Affordable east." },
-  { name: "Riccarton", median_price: 580_000, median_rent_weekly: 600, rental_yield: 5.4, distance_cbd_km: 30, growth_5yr_pct: 4.0, notes: "Student rental hotspot; units common." },
+  { name: "Aranui", median_price: 410_000, median_rent_weekly: 460, rental_yield: 5.8, distance_cbd_km: 8.5, growth_5yr_pct: 8.0, notes: "Most affordable east-side; rising rental demand. New community facilities." },
+  { name: "Hornby", median_price: 470_000, median_rent_weekly: 500, rental_yield: 5.5, distance_cbd_km: 10, growth_5yr_pct: 11.0, notes: "Strong employment area near industry hub. Excellent transport." },
+  { name: "Hoon Hay", median_price: 480_000, median_rent_weekly: 480, rental_yield: 5.2, distance_cbd_km: 5.5, growth_5yr_pct: 6.0, notes: "Popular SW family suburb. Cashmere High zone." },
+  { name: "Linwood", median_price: 440_000, median_rent_weekly: 490, rental_yield: 5.8, distance_cbd_km: 3, growth_5yr_pct: 4.0, notes: "Close to CBD, gentrifying fast. Character homes." },
+  { name: "Woolston", median_price: 460_000, median_rent_weekly: 500, rental_yield: 5.6, distance_cbd_km: 4, growth_5yr_pct: 5.5, notes: "Inner-east, Ferry Rd cafes. Good value." },
+  { name: "New Brighton", median_price: 450_000, median_rent_weekly: 480, rental_yield: 5.5, distance_cbd_km: 8, growth_5yr_pct: 9.0, notes: "Coastal regeneration (hot pools, new library). Values rising." },
+  { name: "Bishopdale", median_price: 490_000, median_rent_weekly: 470, rental_yield: 4.9, distance_cbd_km: 6, growth_5yr_pct: 7.0, notes: "Established NW suburb. Near Nunweek Park." },
+  { name: "Phillipstown", median_price: 430_000, median_rent_weekly: 480, rental_yield: 5.8, distance_cbd_km: 2, growth_5yr_pct: 3.0, notes: "Very central — 5 min to CBD. Strong rental demand." },
+  { name: "Wainoni", median_price: 420_000, median_rent_weekly: 460, rental_yield: 5.7, distance_cbd_km: 6, growth_5yr_pct: 8.5, notes: "Affordable east. Near QEII Park." },
+  { name: "Riccarton", median_price: 450_000, median_rent_weekly: 510, rental_yield: 5.4, distance_cbd_km: 4, growth_5yr_pct: 4.0, notes: "Student rental hotspot near UC. Strong yields." },
+  { name: "Redwood", median_price: 460_000, median_rent_weekly: 470, rental_yield: 5.1, distance_cbd_km: 7, growth_5yr_pct: 6.5, notes: "Near Northlands Mall. Styx River walks." },
+  { name: "Shirley", median_price: 470_000, median_rent_weekly: 460, rental_yield: 5.0, distance_cbd_km: 5, growth_5yr_pct: 5.0, notes: "Near The Palms. Good schools." },
+  { name: "Burwood", median_price: 450_000, median_rent_weekly: 460, rental_yield: 5.3, distance_cbd_km: 7, growth_5yr_pct: 7.5, notes: "Eastern regeneration. Large sections." },
+  { name: "Addington", median_price: 440_000, median_rent_weekly: 460, rental_yield: 5.3, distance_cbd_km: 2, growth_5yr_pct: 5.0, notes: "Walk to Hagley Park & hospital. Strong rentals." },
+  { name: "Sydenham", median_price: 455_000, median_rent_weekly: 470, rental_yield: 5.2, distance_cbd_km: 2.5, growth_5yr_pct: 4.5, notes: "Central south. Colombo St shops." },
+  { name: "Avonside", median_price: 420_000, median_rent_weekly: 440, rental_yield: 5.5, distance_cbd_km: 3.5, growth_5yr_pct: 6.0, notes: "Near Avon River. MRZ development potential." },
+  { name: "Belfast", median_price: 480_000, median_rent_weekly: 470, rental_yield: 4.9, distance_cbd_km: 12, growth_5yr_pct: 8.0, notes: "Growing northern suburb. Near The Groynes." },
+  { name: "Papanui", median_price: 490_000, median_rent_weekly: 480, rental_yield: 4.7, distance_cbd_km: 5, growth_5yr_pct: 5.0, notes: "Near Northlands Mall. Established area." },
 ];
 
 // Indicative June-2026 fixed mortgage rates (lowest across major banks).

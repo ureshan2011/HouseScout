@@ -130,8 +130,15 @@ jobs:
           else
             echo "No browser partials found; using API-scraped listings.json"
           fi
+          # Ensure we always have a baseline if every scraper produced nothing.
+          if [ ! -s frontend/public/listings.json ]; then
+            python scripts/build_listings.py && python scripts/expand_listings.py
+          fi
           echo "Final listing count:"
           python -c "import json; d=json.load(open('frontend/public/listings.json')); print(f'  {len(d)} listings from {len(set(l.get(\"suburb\",\"?\") for l in d))} suburbs')"
+
+      - name: Generate AI analysis for every listing
+        run: python scripts/generate_ai_insights.py
 
       - uses: actions/setup-node@v4
         with:

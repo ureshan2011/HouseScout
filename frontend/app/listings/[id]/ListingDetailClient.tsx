@@ -13,6 +13,7 @@ export default function ListingDetailClient() {
   const [loaded, setLoaded] = useState(false);
   const [fin, setFin] = useState<Finance | null>(null);
   const [insight, setInsight] = useState<string>("");
+  const [insightModel, setInsightModel] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
@@ -21,6 +22,9 @@ export default function ListingDetailClient() {
       setLoaded(true);
     });
     api.financeForListing(lid).then(setFin).catch(() => {});
+    // Auto-load the AI analysis baked at build time.
+    getInsight(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lid]);
 
   async function getInsight(refresh = false) {
@@ -28,6 +32,7 @@ export default function ListingDetailClient() {
     try {
       const r = await api.insight(lid, refresh);
       setInsight(r.content);
+      setInsightModel(r.model);
     } finally {
       setAiLoading(false);
     }
@@ -112,14 +117,17 @@ export default function ListingDetailClient() {
       {/* AI insight */}
       <section className="card p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold">AI insight (local Gemma)</h2>
+          <div>
+            <h2 className="font-semibold">AI analysis</h2>
+            {insightModel && <p className="text-xs text-slate-400">{insightModel}</p>}
+          </div>
           <div className="flex gap-2">
-            <button className="btn" onClick={() => getInsight(false)} disabled={aiLoading}>
-              {aiLoading ? "Thinking…" : insight ? "Refresh" : "Analyse"}
+            <button className="btn-ghost" onClick={() => getInsight(true)} disabled={aiLoading} title="Re-run with your local LM Studio model if configured">
+              {aiLoading ? "Thinking…" : "Refresh with local model"}
             </button>
           </div>
         </div>
-        {insight ? <Markdown text={insight} /> : <p className="text-sm text-slate-500">Click Analyse to get pros/cons, red flags and a negotiation angle from your local model.</p>}
+        {insight ? <Markdown text={insight} /> : <p className="text-sm text-slate-500">{aiLoading ? "Analysing…" : "Loading AI analysis…"}</p>}
       </section>
 
       {l.url && (

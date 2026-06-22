@@ -226,6 +226,15 @@ export const api = {
       const c = insightCache.get(id)!;
       return { ok: true, content: c.content, model: c.model };
     }
+    // Default: serve the AI analysis baked at build time (works with no model server).
+    if (!refresh) {
+      const baked = await ai.bakedInsightFor(id);
+      if (baked) {
+        insightCache.set(id, { content: baked.content, model: baked.model });
+        return baked;
+      }
+    }
+    // Refresh (or no baked insight): call a live local model if configured.
     const d = await loadData();
     const l = d.byId.get(id);
     if (!l) return { ok: false, content: "Listing not found", model: null };
@@ -237,8 +246,13 @@ export const api = {
     };
     const score = { match_score: l.score?.match_score, components: l.score?.components?.components };
     const r = await ai.listingInsight(listingPayload, fin, score);
-    if (r.ok) insightCache.set(id, { content: r.content, model: r.model });
-    return r;
+    if (r.ok) {
+      insightCache.set(id, { content: r.content, model: r.model });
+      return r;
+    }
+    // Live model unavailable — fall back to the baked analysis if we have it.
+    const baked = await ai.bakedInsightFor(id);
+    return baked ?? r;
   },
 
   chat: async (question: string) => {

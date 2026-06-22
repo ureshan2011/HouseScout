@@ -47,8 +47,8 @@ export default function Chat() {
         <h1 className="text-2xl font-bold">AI assistant</h1>
         <div className="flex items-center gap-2">
           {ai && (
-            <span className={`badge ${ai.available ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"}`}>
-              Gemma {ai.available ? "online" : "offline"}
+            <span className={`badge ${ai.available ? "bg-emerald-100 text-emerald-800" : "bg-indigo-100 text-indigo-800"}`}>
+              {ai.available ? "Local model online" : "Built-in AI"}
             </span>
           )}
           <div className="flex rounded-lg border border-slate-300 text-sm">
@@ -63,8 +63,10 @@ export default function Chat() {
       </div>
 
       {!ai?.available && (
-        <p className="card bg-amber-50 p-3 text-sm text-amber-800">
-          Local AI is offline. Start LM Studio on your PC and load a Gemma model (port 1234). The rest of the app still works.
+        <p className="card bg-indigo-50 p-3 text-sm text-indigo-800">
+          Using HouseScout's built-in AI — answers are grounded in the live listing data and Christchurch buyer
+          knowledge base. For free-form, conversational answers you can optionally run a local LM Studio model and
+          set its endpoint in Settings.
         </p>
       )}
 

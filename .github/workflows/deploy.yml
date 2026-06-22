@@ -9,6 +9,9 @@ on:
       - main
       - claude/github-pages-web-app-d8to5j
   workflow_dispatch:
+  schedule:
+    # Refresh live listings daily (~05:00 NZST). Scheduled runs use the default branch.
+    - cron: "0 17 * * *"
 
 permissions:
   contents: read
@@ -45,6 +48,15 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Fetch live listings (Trade Me Property API)
+        # Runs from the repo root; writes frontend/public/listings.json + photos.
+        # No-ops gracefully (empty list) if the API secrets aren't set.
+        working-directory: ${{ github.workspace }}
+        run: node scripts/fetch-listings.mjs
+        env:
+          TRADEME_CONSUMER_KEY: ${{ secrets.TRADEME_CONSUMER_KEY }}
+          TRADEME_CONSUMER_SECRET: ${{ secrets.TRADEME_CONSUMER_SECRET }}
 
       - name: Build static export
         # A project Pages site is served from /<repo>, so basePath must match.

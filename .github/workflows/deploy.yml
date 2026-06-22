@@ -1,7 +1,8 @@
 name: Deploy to GitHub Pages
 
-# Builds the static Next.js export in frontend/ and publishes it to GitHub Pages.
-# Set Pages source to "GitHub Actions" in repo Settings → Pages.
+# Scrapes multiple listing sources in parallel (each on its own runner = different
+# IP + browser signature), merges + dedupes them, builds the Next.js static export,
+# and publishes it to GitHub Pages. Runs on push to main and every 6 hours.
 
 on:
   push:
@@ -10,35 +11,87 @@ on:
       - claude/github-pages-web-app-d8to5j
   workflow_dispatch:
   schedule:
-    # Refresh live listings daily (~05:00 NZST). Scheduled runs use the default branch.
-    - cron: "0 17 * * *"
+    - cron: "0 */6 * * *" # every 6 hours
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow one concurrent deployment; don't cancel in-progress production deploys.
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  build:
+  # ---- parallel scrape "agents": one per source, varied browser engines ---- #
+  scrape:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
+    strategy:
+      fail-fast: false # one blocked site must not cancel the others
+      matrix:
+        include:
+          - source: realestate.co.nz
+            browser: chromium
+            slug: realestate
+          - source: trademe.co.nz
+            browser: firefox
+            slug: trademe
+          - source: oneroof.co.nz
+            browser: chromium
+            slug: oneroof
     steps:
       - uses: actions/checkout@v4
 
-      # Force the Pages "Source" to GitHub Actions (build_type=workflow). This is
-      # idempotent and switches a repo that's still set to "Deploy from a branch"
-      # (which would otherwise serve the Jekyll-rendered README) over to this build.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Playwright + ${{ matrix.browser }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright pillow
+          python -m playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Scrape ${{ matrix.source }}
+        run: python scripts/scrape_listings.py
+        env:
+          SCRAPE_SOURCE: ${{ matrix.source }}
+          SCRAPE_BROWSER: ${{ matrix.browser }}
+          SCRAPE_MAX_PAGES: "5"
+
+      - name: Upload partial (${{ matrix.slug }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: partial-${{ matrix.slug }}
+          if-no-files-found: ignore
+          path: |
+            frontend/public/partials/
+            frontend/public/photos/
+
+  build:
+    needs: scrape
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Force Pages "Source" to GitHub Actions (idempotent).
       - name: Setup Pages
         uses: actions/configure-pages@v5
         with:
           enablement: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download scraped partials + photos
+        uses: actions/download-artifact@v4
+        with:
+          path: frontend/public
+          merge-multiple: true
+
+      - name: Merge + dedupe listings
+        run: python scripts/merge_listings.py
 
       - uses: actions/setup-node@v4
         with:
@@ -47,33 +100,17 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
+        working-directory: frontend
         run: npm ci
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Playwright + Chromium
-        working-directory: ${{ github.workspace }}
-        run: |
-          python -m pip install --upgrade pip
-          pip install playwright
-          python -m playwright install --with-deps chromium
-
-      - name: Scrape live listings (realestate.co.nz, keyless)
-        # Runs from the repo root; writes frontend/public/listings.json + photos.
-        # Writes an empty list (build still succeeds) if the site blocks the runner.
-        working-directory: ${{ github.workspace }}
-        run: python scripts/scrape_listings.py
-
       - name: Build static export
-        # A project Pages site is served from /<repo>, so basePath must match.
+        working-directory: frontend
         run: npm run build
         env:
           NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
 
       - name: Ensure .nojekyll
+        working-directory: frontend
         run: touch out/.nojekyll
 
       - uses: actions/upload-pages-artifact@v3
@@ -82,8 +119,7 @@ jobs:
 
   deploy:
     needs: build
-    # The github-pages environment only allows deployments from the default branch,
-    # so only attempt to deploy on main. Pushes to other branches just build (CI).
+    # The github-pages environment only allows deployments from the default branch.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:

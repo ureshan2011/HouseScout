@@ -30,7 +30,7 @@ app can also run **fully static**, with no backend at all.
 
 | Mode | What runs | Data | AI |
 |------|-----------|------|----|
-| **Static web app** (GitHub Pages) | Just the frontend, entirely in the browser | **Real Christchurch listings scraped from realestate.co.nz at build time** (keyless) + scored in the browser | Calls your local LM Studio endpoint directly from the browser |
+| **Static web app** (GitHub Pages) | Just the frontend, entirely in the browser | **Real Christchurch listings scraped from multiple sites at build time** (keyless, parallel) + scored in the browser | Calls your local LM Studio endpoint directly from the browser |
 | **Full stack** (local/24-7) | FastAPI + SQLite + scheduler + Playwright scraper | Live scraped + LINZ-enriched listings in a database | Local Gemma via the backend proxy |
 
 The static build scrapes live listings (with photos) automatically when GitHub Actions builds
@@ -51,30 +51,39 @@ under the project sub-path. To build it yourself:
 
 ```bash
 cd frontend && npm ci && cd ..
-pip install playwright && python -m playwright install chromium
-python scripts/scrape_listings.py            # writes frontend/public/listings.json (+ photos)
+pip install playwright pillow && python -m playwright install chromium firefox
+python scripts/scrape_listings.py            # all sources -> frontend/public/listings.json (+ photos)
 cd frontend && NEXT_PUBLIC_BASE_PATH=/<repo> npm run build   # static site in frontend/out/
 ```
 
 For a user/org root site (`https://<user>.github.io/`) or a custom domain, leave
 `NEXT_PUBLIC_BASE_PATH` unset.
 
-### Live listings via automatic build-time scraping (no keys)
+### Live listings via automatic multi-source scraping (no keys)
 
-Every GitHub build runs `scripts/scrape_listings.py`, which drives the repo's
-realestate.co.nz Playwright scraper, maps the results into the app's listing shape, downloads
-each photo so it's self-hosted, and writes `frontend/public/listings.json`. A daily scheduled
-run keeps it fresh. **No API keys or secrets** are required.
+The deploy workflow scrapes several sources **in parallel** and merges them — **no API keys**:
 
-Tunable via env in the workflow: `SCRAPE_PRICE_MAX` (default 500000), `SCRAPE_MAX_PAGES`
-(default 3).
+- **Parallel agents:** a CI matrix runs one job per source (`realestate.co.nz`, `trademe.co.nz`,
+  `oneroof.co.nz`), each on its **own runner** (different IP) with a **different browser engine**
+  (Chromium / Firefox) and a rotated, realistic browser signature (user-agent, viewport, locale,
+  timezone, light stealth tweaks) to reduce blocking.
+- **Merge + dedupe:** `scripts/merge_listings.py` combines the partials, dedupes by normalised
+  address (keeping the richest record), assigns ids, and writes `frontend/public/listings.json`.
+- **House photos only:** images are downloaded and self-hosted; agent/human headshots and logos
+  are filtered out by URL keywords and image dimensions (Pillow), keeping landscape property
+  photos.
+- **Every 6 hours:** a `cron` schedule refreshes the data (plus on every push to `main`).
+
+Sources & engines are configured in `scraper/sites.py`. Tunables via workflow env:
+`SCRAPE_PRICE_MAX` (500000), `SCRAPE_MAX_PAGES` (5). Run all sources locally with
+`python scripts/scrape_listings.py`, or one with `SCRAPE_SOURCE=trademe.co.nz`.
 
 > ⚠️ **Trade-offs of keyless scraping.** Real-estate sites use bot protection that frequently
-> blocks CI servers, so a build can legitimately return **no listings** — the site then shows
-> an empty state rather than dummy data. Their terms also restrict scraping/redistribution;
-> this is intended for personal use. If a build comes back empty, re-run it, reduce frequency,
-> or run the optional Python backend locally. Selectors live in `scraper/realestate.py` and may
-> need updating if the site's HTML changes.
+> blocks CI servers, so a source — or a whole build — can legitimately return **no listings**;
+> the site then shows an empty state rather than dummy data (parallel sources make a fully empty
+> build less likely). Their terms also restrict scraping/redistribution; this is intended for
+> personal use. Each run logs how many listings each source returned (Actions log). CSS selectors
+> live in `scraper/sites.py` and may need updating when a site's HTML changes.
 
 > Suburb medians and mortgage rates on the Insights page are indicative reference figures
 > (no free live source) and are labelled as such; the **listings** are real.

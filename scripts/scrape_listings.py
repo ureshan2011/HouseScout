@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
-"""Keyless build-time scraper -> frontend/public/listings.json (+ photos).
+"""Keyless build-time scraper for one source -> a partial listings file (+ photos).
 
-Runs the repo's realestate.co.nz Playwright scraper, maps results into the static
-app's listing shape, downloads each photo so it's self-hosted, and writes a JSON
-file the GitHub Pages site loads at runtime. No API keys required.
+Designed to run as a parallel CI job per source (different runner IP + browser).
+Set SCRAPE_SOURCE to scrape one site and write frontend/public/partials/<slug>.json;
+leave it unset to scrape ALL configured sites locally and write listings.json directly.
 
-Defensive by design: if Playwright/network/the site fails (e.g. the CI runner is
-blocked) it writes an empty list and exits 0 so the site build still succeeds — the
-app shows an empty state, never dummy data.
+Photos are downloaded and re-checked with Pillow so only real house pictures are kept
+(landscape, large enough) — agent/human headshots and logos are dropped.
 
-Usage (from repo root):
-    python scripts/scrape_listings.py
-Env: SCRAPE_PRICE_MAX (500000), SCRAPE_MAX_PAGES (3).
+Defensive: any failure writes an empty result and exits 0 so the site build never
+breaks (the app shows an empty state, never dummy data).
+
+Env: SCRAPE_SOURCE, SCRAPE_BROWSER, SCRAPE_PRICE_MAX (500000), SCRAPE_MAX_PAGES (5).
 """
 from __future__ import annotations
 
+import io
 import json
 import os
-import shutil
+import re
 import sys
 import urllib.request
 from pathlib import Path
@@ -27,109 +28,157 @@ sys.path.insert(0, str(REPO_ROOT))
 
 PUBLIC_DIR = REPO_ROOT / "frontend" / "public"
 PHOTO_DIR = PUBLIC_DIR / "photos"
-OUT_JSON = PUBLIC_DIR / "listings.json"
+PARTIAL_DIR = PUBLIC_DIR / "partials"
 
 PRICE_MAX = int(os.environ.get("SCRAPE_PRICE_MAX", "500000"))
-MAX_PAGES = int(os.environ.get("SCRAPE_MAX_PAGES", "3"))
+MAX_PAGES = int(os.environ.get("SCRAPE_MAX_PAGES", "5"))
+SOURCE = os.environ.get("SCRAPE_SOURCE", "").strip()
+BROWSER = os.environ.get("SCRAPE_BROWSER", "").strip() or None
+
+
+def slugify(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
 
 
 def suburb_from_address(address: str | None) -> str | None:
-    """Best-effort suburb from a comma-separated address ('12 X St, Aranui, Christchurch')."""
     if not address:
         return None
     parts = [p.strip() for p in address.split(",") if p.strip()]
     return parts[-2] if len(parts) >= 2 else None
 
 
-def download_photo(url: str, dest: Path) -> bool:
+def _check_house_image(data: bytes) -> bool:
+    """Second safety net: verify a downloaded image is a plausible house photo."""
+    if len(data) < 3000:
+        return False
+    try:
+        from PIL import Image  # type: ignore
+
+        im = Image.open(io.BytesIO(data))
+        w, h = im.size
+        if w < 320 or h < 220:
+            return False
+        ratio = w / h if h else 0
+        if 0.8 <= ratio <= 1.25 and max(w, h) < 520:  # square-ish small -> headshot/logo
+            return False
+        return True
+    except Exception:  # noqa: BLE001 — Pillow missing or undecodable; keep on size alone
+        return len(data) >= 8000
+
+
+def download_photo(url: str, dest: Path, referer: str) -> bool:
     try:
         req = urllib.request.Request(
-            url, headers={"User-Agent": "HouseScout/0.1 (personal use)", "Referer": "https://www.realestate.co.nz/"}
+            url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Referer": referer,
+            },
         )
         with urllib.request.urlopen(req, timeout=30) as r:
             data = r.read()
-        if len(data) < 1000:  # skip tiny/placeholder responses
+        if not _check_house_image(data):
             return False
         dest.write_bytes(data)
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001
         return False
 
 
-def write_empty(reason: str) -> None:
-    PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
-    OUT_JSON.write_text("[]\n")
-    print(f"! {reason} — wrote empty listings.json")
+def map_listing(it, slug: str, seq: int, referer: str) -> dict:
+    d = it.to_dict()
+    images = []
+    for j, src in enumerate(d.get("images") or []):
+        if not src:
+            continue
+        rel = f"photos/{slug}-{seq}-{j}.jpg"
+        if download_photo(src, PUBLIC_DIR / rel, referer):
+            images.append({"url": rel, "position": len(images)})
+    enr = d.get("enrichment") or {}
+    return {
+        "id": seq,  # placeholder; merge reassigns globally unique ids
+        "source": d.get("source") or slug,
+        "source_id": d.get("source_id"),
+        "url": d.get("url"),
+        "address": d.get("address"),
+        "suburb": d.get("suburb") or suburb_from_address(d.get("address")),
+        "lat": d.get("lat"),
+        "lng": d.get("lng"),
+        "price": d.get("price"),
+        "price_text": d.get("price_text"),
+        "bedrooms": d.get("bedrooms"),
+        "bathrooms": d.get("bathrooms"),
+        "car_spaces": d.get("car_spaces"),
+        "has_garage": bool(d.get("has_garage")),
+        "land_area_m2": d.get("land_area_m2"),
+        "floor_area_m2": d.get("floor_area_m2"),
+        "property_type": d.get("property_type") or "house",
+        "description": d.get("description"),
+        "days_on_market": None,
+        "images": images,
+        "enrichment": {
+            "land_area_m2": enr.get("land_area_m2") or d.get("land_area_m2"),
+            "rateable_value": enr.get("rateable_value"),
+            "estimate_value": enr.get("estimate_value"),
+            "rental_estimate_weekly": enr.get("rental_estimate_weekly"),
+        },
+    }
+
+
+def scrape_source(name: str) -> list[dict]:
+    from scraper.sites import SITES, scrape_site
+
+    cfg = SITES.get(name)
+    if not cfg:
+        print(f"! unknown source '{name}'; known: {', '.join(SITES)}")
+        return []
+    slug = slugify(name)
+    try:
+        items = scrape_site(cfg, price_max=PRICE_MAX, max_pages=MAX_PAGES, browser_engine=BROWSER)
+    except Exception as exc:  # noqa: BLE001
+        print(f"! {name} scrape failed: {exc}")
+        return []
+    out = []
+    for i, it in enumerate(items, start=1):
+        if it.address:
+            out.append(map_listing(it, slug, i, cfg.base))
+    print(f"{name}: kept {len(out)} listings ({sum(len(o['images']) for o in out)} photos)")
+    return out
 
 
 def main() -> None:
     PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
-
-    try:
-        from scraper.realestate import scrape
-    except Exception as exc:  # noqa: BLE001
-        write_empty(f"scraper import failed ({exc})")
-        return
-
-    items = []
-    try:
-        items = scrape(price_max=PRICE_MAX, max_pages=MAX_PAGES)
-    except Exception as exc:  # noqa: BLE001
-        print(f"! scrape error: {exc}")
-    print(f"Scraped {len(items)} listings from realestate.co.nz (<= ${PRICE_MAX:,})")
-
-    # Fresh photo dir each run so removed listings don't leave orphans.
-    shutil.rmtree(PHOTO_DIR, ignore_errors=True)
     PHOTO_DIR.mkdir(parents=True, exist_ok=True)
 
-    out = []
-    for i, it in enumerate(items, start=1):
-        d = it.to_dict()
-        images = []
-        for j, src in enumerate(d.get("images") or []):
-            if not src:
-                continue
-            rel = f"photos/{i}-{j}.jpg"
-            if download_photo(src, PUBLIC_DIR / rel):
-                images.append({"url": rel, "position": j})
-        enr = d.get("enrichment") or {}
-        out.append(
-            {
-                "id": i,  # stable sequential id for static routes
-                "source": d.get("source") or "realestate.co.nz",
-                "source_id": d.get("source_id"),
-                "url": d.get("url"),
-                "address": d.get("address"),
-                "suburb": d.get("suburb") or suburb_from_address(d.get("address")),
-                "lat": d.get("lat"),
-                "lng": d.get("lng"),
-                "price": d.get("price"),
-                "price_text": d.get("price_text"),
-                "bedrooms": d.get("bedrooms"),
-                "bathrooms": d.get("bathrooms"),
-                "car_spaces": d.get("car_spaces"),
-                "has_garage": bool(d.get("has_garage")),
-                "land_area_m2": d.get("land_area_m2"),
-                "floor_area_m2": d.get("floor_area_m2"),
-                "property_type": d.get("property_type") or "house",
-                "description": d.get("description"),
-                "days_on_market": None,
-                "images": images,
-                "enrichment": {
-                    "land_area_m2": enr.get("land_area_m2") or d.get("land_area_m2"),
-                    "rateable_value": enr.get("rateable_value"),
-                    "estimate_value": enr.get("estimate_value"),
-                    "rental_estimate_weekly": enr.get("rental_estimate_weekly"),
-                },
-            }
-        )
+    if SOURCE:
+        # Parallel CI mode: scrape one source -> partial file (+ namespaced photos).
+        PARTIAL_DIR.mkdir(parents=True, exist_ok=True)
+        listings = scrape_source(SOURCE)
+        out = PARTIAL_DIR / f"{slugify(SOURCE)}.json"
+        out.write_text(json.dumps(listings, indent=2) + "\n")
+        print(f"Wrote {len(listings)} listings to {out}")
+        return
 
-    OUT_JSON.write_text(json.dumps(out, indent=2) + "\n")
-    print(f"Wrote {len(out)} listings to {OUT_JSON}")
+    # Local mode: scrape everything sequentially and write the final file.
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    from scraper.sites import SITES
+    from merge_listings import dedupe_and_number  # type: ignore
+
+    all_listings: list[dict] = []
+    for name in SITES:
+        all_listings.extend(scrape_source(name))
+    final = dedupe_and_number(all_listings)
+    (PUBLIC_DIR / "listings.json").write_text(json.dumps(final, indent=2) + "\n")
+    print(f"Wrote {len(final)} merged listings to listings.json")
 
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as exc:  # noqa: BLE001 — never fail the build
-        write_empty(f"unexpected error ({exc})")
+        PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
+        target = PARTIAL_DIR / f"{slugify(SOURCE)}.json" if SOURCE else PUBLIC_DIR / "listings.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("[]\n")
+        print(f"! unexpected error ({exc}); wrote empty {target.name}")

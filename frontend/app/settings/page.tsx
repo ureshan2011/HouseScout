@@ -39,9 +39,9 @@ export default function Settings() {
         <h2 className="mb-2 font-semibold">About this build</h2>
         <p className="text-sm text-slate-600">
           This is the static (GitHub Pages) build of HouseScout. Listings are real Christchurch
-          properties fetched from the Trade Me Property API when the site builds (refreshed daily);
-          scoring and all financial analysis then run entirely in your browser. For LINZ land
-          enrichment, custom scraping and a database, run the optional Python backend (see README).
+          properties scraped from realestate.co.nz automatically when the site builds (refreshed
+          daily); scoring and all financial analysis then run entirely in your browser. For LINZ
+          land enrichment and a persistent database, run the optional Python backend (see README).
         </p>
       </section>
 

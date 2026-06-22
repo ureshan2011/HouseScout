@@ -54,8 +54,9 @@ export default function Dashboard() {
         </div>
         {top.length === 0 ? (
           <p className="text-sm text-slate-500">
-            No listings yet. They’re fetched live from Trade Me when the site builds — add your
-            Trade Me API keys as repo secrets (see README) and re-run the deploy.
+            No listings yet. They’re scraped from realestate.co.nz automatically when the site
+            builds. If this stays empty, the source likely blocked the build runner — re-run the
+            deploy, or run the optional Python backend locally for live data.
           </p>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

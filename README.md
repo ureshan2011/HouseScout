@@ -30,12 +30,12 @@ app can also run **fully static**, with no backend at all.
 
 | Mode | What runs | Data | AI |
 |------|-----------|------|----|
-| **Static web app** (GitHub Pages) | Just the frontend, entirely in the browser | **Real Christchurch listings from the Trade Me Property API**, fetched at build time + scored in the browser | Calls your local LM Studio endpoint directly from the browser |
+| **Static web app** (GitHub Pages) | Just the frontend, entirely in the browser | **Real Christchurch listings scraped from realestate.co.nz at build time** (keyless) + scored in the browser | Calls your local LM Studio endpoint directly from the browser |
 | **Full stack** (local/24-7) | FastAPI + SQLite + scheduler + Playwright scraper | Live scraped + LINZ-enriched listings in a database | Local Gemma via the backend proxy |
 
-The static build fetches live listings (with photos) when GitHub Actions builds the site and
-refreshes them daily. Run the Python backend when you want custom scraping, LINZ land data
-and a persistent database.
+The static build scrapes live listings (with photos) automatically when GitHub Actions builds
+the site, and refreshes them daily — no API keys. Run the Python backend when you want LINZ
+land data and a persistent database.
 
 ## Deploy to GitHub Pages (static web app)
 
@@ -43,40 +43,38 @@ The repo ships a workflow (`.github/workflows/deploy.yml`) that builds the Next.
 export and publishes it to Pages on every push to `main`.
 
 1. In the repo: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-2. Add your Trade Me API keys as repo secrets (see below) so the build can fetch real listings.
-3. Push to `main` (or run the workflow manually). The site goes live at
+2. Push to `main` (or run the workflow manually). The site goes live at
    `https://<user>.github.io/<repo>/`.
 
 The workflow sets `NEXT_PUBLIC_BASE_PATH=/<repo>` automatically so assets and links resolve
 under the project sub-path. To build it yourself:
 
 ```bash
-cd frontend
-npm ci
-node ../scripts/fetch-listings.mjs          # writes public/listings.json (+ photos)
-NEXT_PUBLIC_BASE_PATH=/<repo> npm run build  # static site in frontend/out/
+cd frontend && npm ci && cd ..
+pip install playwright && python -m playwright install chromium
+python scripts/scrape_listings.py            # writes frontend/public/listings.json (+ photos)
+cd frontend && NEXT_PUBLIC_BASE_PATH=/<repo> npm run build   # static site in frontend/out/
 ```
 
 For a user/org root site (`https://<user>.github.io/`) or a custom domain, leave
 `NEXT_PUBLIC_BASE_PATH` unset.
 
-### Live listings via the Trade Me Property API
+### Live listings via automatic build-time scraping (no keys)
 
-Listings are pulled from Trade Me's **official** API at build time (no scraping), then their
-photos are downloaded and self-hosted so they always display.
+Every GitHub build runs `scripts/scrape_listings.py`, which drives the repo's
+realestate.co.nz Playwright scraper, maps the results into the app's listing shape, downloads
+each photo so it's self-hosted, and writes `frontend/public/listings.json`. A daily scheduled
+run keeps it fresh. **No API keys or secrets** are required.
 
-1. Sign in at <https://developer.trademe.co.nz>, register an application, and copy your
-   **Consumer Key** and **Consumer Secret** (production).
-2. In the repo: **Settings → Secrets and variables → Actions → New repository secret** and add:
-   - `TRADEME_CONSUMER_KEY`
-   - `TRADEME_CONSUMER_SECRET`
-3. Re-run the deploy workflow. `scripts/fetch-listings.mjs` searches Christchurch City
-   residential listings ≤ $500k, writes `frontend/public/listings.json`, and downloads photos
-   to `frontend/public/photos/`. A daily scheduled run keeps them fresh.
+Tunable via env in the workflow: `SCRAPE_PRICE_MAX` (default 500000), `SCRAPE_MAX_PAGES`
+(default 3).
 
-Tunable via env in the workflow: `TRADEME_PRICE_MAX`, `TRADEME_ROWS`, `TRADEME_DISTRICT_NAME`,
-`TRADEME_REGION_NAME`, `TRADEME_MAX_PHOTOS`. Without the keys the build still succeeds but the
-site shows an empty state (no dummy data).
+> ⚠️ **Trade-offs of keyless scraping.** Real-estate sites use bot protection that frequently
+> blocks CI servers, so a build can legitimately return **no listings** — the site then shows
+> an empty state rather than dummy data. Their terms also restrict scraping/redistribution;
+> this is intended for personal use. If a build comes back empty, re-run it, reduce frequency,
+> or run the optional Python backend locally. Selectors live in `scraper/realestate.py` and may
+> need updating if the site's HTML changes.
 
 > Suburb medians and mortgage rates on the Insights page are indicative reference figures
 > (no free live source) and are labelled as such; the **listings** are real.
@@ -105,13 +103,13 @@ API now at http://localhost:8000 (docs at `/docs`).
 ```bash
 cd frontend
 npm install
-node ../scripts/fetch-listings.mjs   # optional: fetch real listings (needs TRADEME_* env)
-npm run dev                          # http://localhost:3000  (self-contained, no backend)
+python ../scripts/scrape_listings.py   # optional: scrape real listings into public/listings.json
+npm run dev                            # http://localhost:3000  (self-contained, no backend)
 ```
 
 > The frontend is a standalone static app — it loads real listings from `public/listings.json`
-> (fetched from Trade Me at build time) and computes scoring/finance in the browser. The Python
-> backend is optional and used for custom scraping, LINZ enrichment and persistence.
+> (scraped from realestate.co.nz at build time) and computes scoring/finance in the browser. The
+> Python backend is optional and used for LINZ enrichment and persistence.
 
 ### 3. Local AI (optional but recommended)
 1. Install **LM Studio** on your Windows PC and load a Gemma model (e.g. `gemma-3-27b-it`).

@@ -53,7 +53,10 @@ export default function Dashboard() {
           <Link href="/listings" className="text-sm text-brand-dark hover:underline">View all →</Link>
         </div>
         {top.length === 0 ? (
-          <p className="text-sm text-slate-500">No listings yet. Seed the DB or run a scrape.</p>
+          <p className="text-sm text-slate-500">
+            No listings yet. They’re fetched live from Trade Me when the site builds — add your
+            Trade Me API keys as repo secrets (see README) and re-run the deploy.
+          </p>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {top.map((l) => (

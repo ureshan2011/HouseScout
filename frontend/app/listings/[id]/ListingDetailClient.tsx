@@ -10,13 +10,17 @@ export default function ListingDetailClient() {
   const params = useParams<{ id: string }>();
   const lid = Number(params.id);
   const [l, setL] = useState<Listing | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [fin, setFin] = useState<Finance | null>(null);
   const [insight, setInsight] = useState<string>("");
   const [aiLoading, setAiLoading] = useState(false);
 
   useEffect(() => {
-    api.listing(lid).then(setL);
-    api.financeForListing(lid).then(setFin);
+    api.listing(lid).then((x) => {
+      setL(x ?? null);
+      setLoaded(true);
+    });
+    api.financeForListing(lid).then(setFin).catch(() => {});
   }, [lid]);
 
   async function getInsight(refresh = false) {
@@ -29,7 +33,7 @@ export default function ListingDetailClient() {
     }
   }
 
-  if (!l) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (!l) return <p className="text-sm text-slate-500">{loaded ? "Listing not found." : "Loading…"}</p>;
   const comps = l.score?.components?.components ?? {};
   const land = l.enrichment?.land_area_m2 ?? l.land_area_m2;
 

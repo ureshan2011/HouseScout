@@ -38,10 +38,10 @@ export default function Settings() {
       <section className="card p-4">
         <h2 className="mb-2 font-semibold">About this build</h2>
         <p className="text-sm text-slate-600">
-          This is the static (GitHub Pages) build of HouseScout: listings, scoring and all
-          financial analysis run entirely in your browser from bundled sample data — no server
-          required. For live scraping, LINZ enrichment and a database, run the optional Python
-          backend from the repo (see the README).
+          This is the static (GitHub Pages) build of HouseScout. Listings are real Christchurch
+          properties fetched from the Trade Me Property API when the site builds (refreshed daily);
+          scoring and all financial analysis then run entirely in your browser. For LINZ land
+          enrichment, custom scraping and a database, run the optional Python backend (see README).
         </p>
       </section>
 

@@ -1,14 +1,17 @@
-// Client-side "API". Previously this proxied to a FastAPI backend; the app is now
-// a fully static GitHub Pages site, so every method computes its result in the
-// browser from bundled seed data + the ported finance/scoring/AI engines.
+// Client-side "API". The app is a fully static GitHub Pages site, so every method
+// computes its result in the browser. Listings are real data fetched from the Trade
+// Me Property API at build time into /listings.json (see scripts/fetch-listings.mjs);
+// scoring and all financial analysis run here from the ported engines.
 //
 // The public surface (types, `api`, `fmt`) is unchanged so the pages/components
 // keep working as-is.
 
-import { DEFAULTS, LISTINGS, RATES, SUBURBS, RawListing } from "./data";
+import { DEFAULTS, RATES, SUBURBS, RawListing } from "./data";
 import { analyse, FinanceResult, Scenario } from "./finance";
 import { defaultCriteria, scoreListing } from "./scoring";
 import * as ai from "./ai";
+
+const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 export type Enrichment = {
   land_area_m2?: number | null;
@@ -50,29 +53,75 @@ export type Listing = {
 export type Finance = FinanceResult;
 
 // --------------------------------------------------------------------------- //
-// Build scored listings once (matches backend rescore_all with default criteria).
+// Load real listings (built into /listings.json) and score them once. Cached.
 // --------------------------------------------------------------------------- //
-function buildScored(): Listing[] {
-  const c = defaultCriteria();
-  return LISTINGS.map((raw: RawListing) => {
-    const r = scoreListing(raw, c);
-    const { days_on_market, source_id, ...rest } = raw;
-    void days_on_market;
-    void source_id;
-    return {
-      ...rest,
-      score: {
-        match_score: r.match_score,
-        passes_filters: r.passes_filters,
-        components: { components: r.components, rentable_rooms: r.rentable_rooms },
-      },
-    } as Listing;
-  });
+type DataSet = {
+  scored: Listing[];
+  byId: Map<number, Listing>;
+  rawById: Map<number, RawListing>;
+};
+
+let dataPromise: Promise<DataSet> | null = null;
+
+function assetUrl(path: string): string {
+  if (/^https?:\/\//.test(path)) return path;
+  return `${BASE_PATH}/${path.replace(/^\//, "")}`;
 }
 
-const SCORED: Listing[] = buildScored();
-const byId = new Map<number, Listing>(SCORED.map((l) => [l.id, l]));
-const rawById = new Map<number, RawListing>(LISTINGS.map((l) => [l.id, l]));
+async function fetchRawListings(): Promise<RawListing[]> {
+  try {
+    const res = await fetch(`${BASE_PATH}/listings.json`, { cache: "no-store" });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? (data as RawListing[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadData(): Promise<DataSet> {
+  if (dataPromise) return dataPromise;
+  dataPromise = (async () => {
+    const raw = await fetchRawListings();
+    const c = defaultCriteria();
+    const scored: Listing[] = raw.map((r) => {
+      const s = scoreListing(r, c);
+      return {
+        id: r.id,
+        source: r.source,
+        url: r.url,
+        address: r.address,
+        suburb: r.suburb,
+        lat: r.lat,
+        lng: r.lng,
+        price: r.price,
+        price_text: r.price_text,
+        bedrooms: r.bedrooms,
+        bathrooms: r.bathrooms,
+        car_spaces: r.car_spaces,
+        has_garage: r.has_garage,
+        land_area_m2: r.land_area_m2,
+        floor_area_m2: r.floor_area_m2,
+        property_type: r.property_type,
+        description: r.description,
+        // Photos are self-hosted under /photos; resolve against the Pages base path.
+        images: (r.images || []).map((im) => ({ url: assetUrl(im.url), position: im.position })),
+        enrichment: r.enrichment,
+        score: {
+          match_score: s.match_score,
+          passes_filters: s.passes_filters,
+          components: { components: s.components, rentable_rooms: s.rentable_rooms },
+        },
+      };
+    });
+    return {
+      scored,
+      byId: new Map(scored.map((l) => [l.id, l])),
+      rawById: new Map(raw.map((l) => [l.id, l])),
+    };
+  })();
+  return dataPromise;
+}
 
 function num(v: string | null): number | undefined {
   if (v == null || v === "") return undefined;
@@ -80,7 +129,7 @@ function num(v: string | null): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-function filterAndSort(qs: string): Listing[] {
+function filterAndSort(d: DataSet, qs: string): Listing[] {
   const p = new URLSearchParams(qs.replace(/^\?/, ""));
   const suburb = p.get("suburb");
   const propertyType = p.get("property_type");
@@ -92,7 +141,7 @@ function filterAndSort(qs: string): Listing[] {
   const limit = Math.min(num(p.get("limit")) ?? 60, 200);
   const offset = num(p.get("offset")) ?? 0;
 
-  let rows = SCORED.slice();
+  let rows = d.scored.slice();
   if (suburb) rows = rows.filter((l) => l.suburb === suburb);
   if (propertyType) rows = rows.filter((l) => l.property_type === propertyType);
   if (maxPrice != null) rows = rows.filter((l) => l.price != null && l.price <= maxPrice);
@@ -101,7 +150,7 @@ function filterAndSort(qs: string): Listing[] {
   if (passesOnly) rows = rows.filter((l) => l.score?.passes_filters);
 
   const score = (l: Listing) => l.score?.match_score ?? -Infinity;
-  const days = (l: Listing) => rawById.get(l.id)?.days_on_market ?? Infinity;
+  const days = (l: Listing) => d.rawById.get(l.id)?.days_on_market ?? Infinity;
   if (sort === "score") rows.sort((a, b) => score(b) - score(a));
   else if (sort === "price") rows.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
   else if (sort === "price_desc") rows.sort((a, b) => (b.price ?? -Infinity) - (a.price ?? -Infinity));
@@ -110,8 +159,8 @@ function filterAndSort(qs: string): Listing[] {
   return rows.slice(offset, offset + limit);
 }
 
-function scenarioForListing(id: number, qs: string): Finance {
-  const l = byId.get(id);
+function scenarioFor(d: DataSet, id: number, qs: string): Finance {
+  const l = d.byId.get(id);
   const p = new URLSearchParams(qs.replace(/^\?/, ""));
   const s: Scenario = {
     price: l?.price ?? DEFAULTS.preapproval,
@@ -128,15 +177,12 @@ function scenarioForListing(id: number, qs: string): Finance {
 
 const insightCache = new Map<number, { content: string; model: string | null }>();
 
-async function ready<T>(v: T): Promise<T> {
-  return v;
-}
-
 export const api = {
-  health: () => ready({ status: "ok", mode: "static" }),
+  health: async () => ({ status: "ok", mode: "static" }),
 
   stats: async () => {
-    const passing = SCORED.filter((l) => l.score?.passes_filters);
+    const d = await loadData();
+    const passing = d.scored.filter((l) => l.score?.passes_filters);
     const prices = passing.map((l) => l.price).filter((p): p is number => p != null);
     const avg = prices.length ? prices.reduce((a, b) => a + b, 0) / prices.length : null;
     const top = passing
@@ -145,34 +191,32 @@ export const api = {
       .slice(0, 3)
       .map((t) => ({ id: t.id, address: t.address, suburb: t.suburb, price: t.price, score: t.score?.match_score ?? null }));
     return {
-      total_listings: SCORED.length,
+      total_listings: d.scored.length,
       matching_listings: passing.length,
       avg_matching_price: avg != null ? Math.round(avg) : null,
       top,
     };
   },
 
-  suburbs: () => ready([...SUBURBS].sort((a, b) => a.median_price - b.median_price)),
-  rates: () => ready([...RATES].sort((a, b) => a.rate - b.rate)),
+  suburbs: async () => [...SUBURBS].sort((a, b) => a.median_price - b.median_price),
+  rates: async () => [...RATES].sort((a, b) => a.rate - b.rate),
 
-  listings: (qs = "") => ready(filterAndSort(qs)),
-  listing: (id: number) => ready(byId.get(id) as Listing),
+  listings: async (qs = "") => filterAndSort(await loadData(), qs),
+  listing: async (id: number) => (await loadData()).byId.get(id) as Listing,
 
-  financeForListing: (id: number, qs = "") => ready(scenarioForListing(id, qs)),
-  scenario: (body: any) =>
-    ready(
-      analyse({
-        price: body.price,
-        deposit: body.deposit ?? DEFAULTS.deposit,
-        annual_rate: body.annual_rate ?? DEFAULTS.annual_rate,
-        term_years: body.term_years ?? DEFAULTS.term_years,
-        bedrooms: body.bedrooms,
-        weekly_rent: body.weekly_rent ?? DEFAULTS.weekly_rent,
-        occupancy: body.occupancy ?? 1.0,
-        reinvest_boarder_income: body.reinvest_boarder_income ?? true,
-      }),
-    ),
-  financeDefaults: () => ready({ ...DEFAULTS }),
+  financeForListing: async (id: number, qs = "") => scenarioFor(await loadData(), id, qs),
+  scenario: async (body: any) =>
+    analyse({
+      price: body.price,
+      deposit: body.deposit ?? DEFAULTS.deposit,
+      annual_rate: body.annual_rate ?? DEFAULTS.annual_rate,
+      term_years: body.term_years ?? DEFAULTS.term_years,
+      bedrooms: body.bedrooms,
+      weekly_rent: body.weekly_rent ?? DEFAULTS.weekly_rent,
+      occupancy: body.occupancy ?? 1.0,
+      reinvest_boarder_income: body.reinvest_boarder_income ?? true,
+    }),
+  financeDefaults: async () => ({ ...DEFAULTS }),
 
   // --- AI (runs in the browser against the configured LM Studio endpoint) ---
   aiHealth: () => ai.health(),
@@ -182,9 +226,10 @@ export const api = {
       const c = insightCache.get(id)!;
       return { ok: true, content: c.content, model: c.model };
     }
-    const l = byId.get(id);
+    const d = await loadData();
+    const l = d.byId.get(id);
     if (!l) return { ok: false, content: "Listing not found", model: null };
-    const fin = scenarioForListing(id, "");
+    const fin = scenarioFor(d, id, "");
     const listingPayload = {
       address: l.address, suburb: l.suburb, price: l.price, price_text: l.price_text,
       bedrooms: l.bedrooms, bathrooms: l.bathrooms, has_garage: l.has_garage,
@@ -197,13 +242,14 @@ export const api = {
   },
 
   chat: async (question: string) => {
+    const d = await loadData();
     // RAG-lite: ground the answer in the top matches by score (no embeddings client-side).
-    const rows = SCORED.filter((l) => l.score?.passes_filters)
+    const rows = d.scored.filter((l) => l.score?.passes_filters)
       .slice()
       .sort((a, b) => (b.score?.match_score ?? 0) - (a.score?.match_score ?? 0))
       .slice(0, 6);
     const context = rows.map((r) => {
-      const fin = scenarioForListing(r.id, "");
+      const fin = scenarioFor(d, r.id, "");
       return {
         address: r.address, suburb: r.suburb, price: r.price,
         bedrooms: r.bedrooms, bathrooms: r.bathrooms, has_garage: r.has_garage,
@@ -222,10 +268,10 @@ export const api = {
   advisor: (question: string) => ai.advisor(question),
 
   // --- No-ops in the static build (need a backend) — return friendly notices ---
-  reindex: () =>
-    ready({ ok: false, reason: "Semantic reindexing needs the optional Python backend; chat uses score-ranked matches instead." }),
-  refreshRates: () =>
-    ready({ ok: false, error: "Live rate scraping needs the optional Python backend. The rates shown are the bundled snapshot." }),
+  reindex: async () =>
+    ({ ok: false, reason: "Semantic reindexing needs the optional Python backend; chat uses score-ranked matches instead." }),
+  refreshRates: async () =>
+    ({ ok: false, error: "Live rate scraping needs the optional Python backend. The rates shown are the bundled snapshot." }),
 };
 
 export const fmt = {

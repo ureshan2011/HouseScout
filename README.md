@@ -22,7 +22,46 @@ data/        SQLite db + image cache (gitignored)
 ```
 
 The finance and scoring engines are **pure functions** (`backend/app/finance.py`,
-`backend/app/scoring.py`) with unit tests — the trustworthy core of the app.
+`backend/app/scoring.py`) with unit tests — the trustworthy core of the app. They are
+mirrored 1:1 in TypeScript (`frontend/lib/finance.ts`, `frontend/lib/scoring.ts`) so the
+app can also run **fully static**, with no backend at all.
+
+## Two ways to run it
+
+| Mode | What runs | Data | AI |
+|------|-----------|------|----|
+| **Static web app** (GitHub Pages) | Just the frontend, entirely in the browser | Bundled sample listings + ported finance/scoring engines | Calls your local LM Studio endpoint directly from the browser |
+| **Full stack** (local/24-7) | FastAPI + SQLite + scheduler + Playwright scraper | Live scraped + LINZ-enriched listings in a database | Local Gemma via the backend proxy |
+
+The static build is the zero-setup way to try everything (matching, scoring, the financial
+planner, the map, charts). Run the Python backend when you want live scraping, LINZ land
+data and a persistent database.
+
+## Deploy to GitHub Pages (static web app)
+
+The repo ships a workflow (`.github/workflows/deploy.yml`) that builds the Next.js static
+export and publishes it to Pages on every push to `main`.
+
+1. In the repo: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. Push to `main` (or run the workflow manually). The site goes live at
+   `https://<user>.github.io/<repo>/`.
+
+The workflow sets `NEXT_PUBLIC_BASE_PATH=/<repo>` automatically so assets and links resolve
+under the project sub-path. To build it yourself:
+
+```bash
+cd frontend
+npm ci
+NEXT_PUBLIC_BASE_PATH=/<repo> npm run build   # static site in frontend/out/
+```
+
+For a user/org root site (`https://<user>.github.io/`) or a custom domain, leave
+`NEXT_PUBLIC_BASE_PATH` unset.
+
+**AI in the static build:** the frontend talks to an OpenAI-compatible endpoint (LM Studio)
+directly from your browser — set the endpoint under **Settings**. Browsers treat
+`http://localhost` as trusted, so an HTTPS Pages site can still reach a local LM Studio
+server (enable CORS in LM Studio if requests are blocked). Everything else works offline.
 
 ## Quick start
 
@@ -43,8 +82,12 @@ API now at http://localhost:8000 (docs at `/docs`).
 ```bash
 cd frontend
 npm install
-npm run dev                     # http://localhost:3000  (proxies /api/* to :8000)
+npm run dev                     # http://localhost:3000  (self-contained: runs on bundled data)
 ```
+
+> The frontend is now a standalone static app — it computes scoring/finance in the browser
+> from bundled sample data and no longer proxies to the backend. The Python backend is
+> optional and used for live scraping, LINZ enrichment and persistence.
 
 ### 3. Local AI (optional but recommended)
 1. Install **LM Studio** on your Windows PC and load a Gemma model (e.g. `gemma-3-27b-it`).

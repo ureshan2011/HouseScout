@@ -61,6 +61,9 @@ jobs:
 
   deploy:
     needs: build
+    # The github-pages environment only allows deployments from the default branch,
+    # so only attempt to deploy on main. Pushes to other branches just build (CI).
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

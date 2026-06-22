@@ -41,9 +41,9 @@ export default function Dashboard() {
         <Stat label="Matching your criteria" value={stats ? fmt.num(stats.matching_listings) : "…"} />
         <Stat label="Avg matching price" value={stats ? fmt.money(stats.avg_matching_price) : "…"} />
         <Stat
-          label="Local AI (Gemma)"
-          value={ai ? (ai.available ? "Online" : "Offline") : "…"}
-          hint={ai?.available ? ai.models?.[0] : "Start LM Studio"}
+          label="AI analysis"
+          value={ai ? (ai.available ? "Local model" : "Built-in") : "…"}
+          hint={ai?.available ? ai.models?.[0] : "Baked insights + offline chat"}
         />
       </section>
 

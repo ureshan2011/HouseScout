@@ -64,16 +64,23 @@ BOARDER_WEEKLY_RENT=${defaults.weekly_rent}`}
       </section>
 
       <section className="card p-4">
-        <h2 className="mb-2 font-semibold">Local AI (LM Studio)</h2>
+        <h2 className="mb-2 font-semibold">AI analysis</h2>
         <p className="text-sm text-slate-600">
-          The AI features call an OpenAI-compatible endpoint directly from your browser. Run
-          LM Studio with a Gemma model and its local server enabled, then point the endpoint here.
-          Nothing is sent anywhere else.
+          HouseScout ships with <strong>built-in AI analysis</strong>: every listing has a pre-generated
+          assessment (verdict, pros/cons, rent-a-room potential and a negotiation angle) baked in at
+          build time, and the AI chat answers from the live listing data and a Christchurch buyer
+          knowledge base. This all works out of the box — no setup required.
+        </p>
+        <p className="mt-2 text-sm text-slate-600">
+          <strong>Optional:</strong> for free-form conversational answers and on-demand re-analysis, you
+          can connect a local OpenAI-compatible model (e.g. LM Studio with a Gemma model and its local
+          server enabled). Requests go directly from your browser to the endpoint you set below;
+          nothing is sent anywhere else.
         </p>
         <p className="mt-2 text-sm">
-          Status:{" "}
+          Local model:{" "}
           <span className={health?.available ? "font-semibold text-emerald-700" : "text-slate-500"}>
-            {health ? (health.available ? "Online" : "Offline") : "…"}
+            {health ? (health.available ? "Online" : "Not connected (using built-in AI)") : "…"}
           </span>
         </p>
         {health?.models?.length ? (

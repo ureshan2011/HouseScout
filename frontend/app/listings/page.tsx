@@ -75,7 +75,7 @@ export default function ListingsPage() {
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>
       ) : listings.length === 0 ? (
-        <p className="text-sm text-slate-500">No listings match. Loosen the filters, or check that live Trade Me data was fetched at build time.</p>
+        <p className="text-sm text-slate-500">No listings match. Loosen the filters, or check that the build-time scrape returned data.</p>
       ) : view === "map" ? (
         <ListingsMap listings={listings} />
       ) : (

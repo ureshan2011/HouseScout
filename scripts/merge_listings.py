@@ -56,6 +56,17 @@ def dedupe_and_number(listings: list[dict]) -> list[dict]:
 def main() -> None:
     PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
     listings: list[dict] = []
+
+    # Load the existing listings.json (from build_listings + expand_listings) as the base.
+    if OUT_JSON.exists():
+        try:
+            base = json.loads(OUT_JSON.read_text())
+            if isinstance(base, list):
+                listings.extend(base)
+                print(f"  + listings.json (base): {len(base)} listings")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ! couldn't load existing listings.json: {exc}")
+
     if PARTIAL_DIR.exists():
         for f in sorted(PARTIAL_DIR.glob("*.json")):
             try:

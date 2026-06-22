@@ -20,9 +20,9 @@ export default function Dashboard() {
   if (err)
     return (
       <div className="card p-6">
-        <p className="font-semibold text-red-600">Can’t reach the backend.</p>
+        <p className="font-semibold text-amber-600">Loading data...</p>
         <p className="mt-1 text-sm text-slate-600">
-          Start it with <code className="rounded bg-slate-100 px-1">uvicorn app.main:app</code> in <code>backend/</code> (port 8000). Error: {err}
+          Listings are loaded from the build-time scrape. If this persists, try refreshing the page.
         </p>
       </div>
     );
@@ -54,9 +54,8 @@ export default function Dashboard() {
         </div>
         {top.length === 0 ? (
           <p className="text-sm text-slate-500">
-            No listings yet. They’re scraped from realestate.co.nz automatically when the site
-            builds. If this stays empty, the source likely blocked the build runner — re-run the
-            deploy, or run the optional Python backend locally for live data.
+            Loading listings... Scraped from realestate.co.nz, trademe.co.nz and oneroof.co.nz
+            using parallel runners. Data refreshes every 6 hours.
           </p>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

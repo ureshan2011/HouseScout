@@ -12,6 +12,7 @@ const nav = [
   { href: "/listings", label: "Listings" },
   { href: "/planner", label: "Planner" },
   { href: "/insights", label: "Insights" },
+  { href: "/guide", label: "Buyer Guide" },
   { href: "/chat", label: "AI Chat" },
   { href: "/settings", label: "Settings" },
 ];

@@ -35,9 +35,8 @@ jobs:
           # Verifies the pipeline scripts run end to end and agree with each other.
           # Photo harvesting is skipped: it needs network access to a third party.
           python scripts/build_listings.py
-          python scripts/expand_listings.py
-          python scripts/provenance.py
           python scripts/hedonic.py
+          python scripts/provenance.py
           python scripts/generate_ai_insights.py
           python - <<'EOF'
           import json, pathlib
@@ -45,10 +44,16 @@ jobs:
           listings = json.loads((pub / "listings.json").read_text())
           model = json.loads((pub / "model.json").read_text())
           insights = json.loads((pub / "insights.json").read_text())
-          assert listings, "no listings produced"
-          assert all("data_quality" in l for l in listings), "provenance annotation missing"
+          # Listings can legitimately be zero: the scraper talks to a third party that
+          # may block CI, and there is deliberately no fabricated fallback. What must
+          # hold is that the pipeline produced coherent output for whatever it got.
           assert model["coefficients"], "model has no coefficients"
           assert len(insights) == len(listings), "analysis missing for some listings"
+          for l in listings:
+              assert "data_quality" in l, "provenance annotation missing"
+              assert l.get("price_estimate"), f"no price estimate for {l.get('address')}"
+          if not listings:
+              print("WARNING: scrape returned nothing (source may be blocking CI)")
           print(f"OK: {len(listings)} listings, model n_train={model['n_train']}")
           EOF
 

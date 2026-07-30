@@ -6,6 +6,7 @@ import { api, Finance, fmt, Listing } from "@/lib/api";
 import { PayoffChart } from "@/components/PayoffChart";
 import { Markdown } from "@/components/Markdown";
 import { PropertyGallery } from "@/components/PropertyImage";
+import { displayPrice } from "@/lib/price";
 import { DataQualityNotice } from "@/components/DataQualityBadge";
 import {
   ValuationCard,
@@ -49,6 +50,7 @@ export default function ListingDetailClient() {
 
   if (!l) return <p className="text-sm text-slate-500">{loaded ? "Listing not found." : "Loading…"}</p>;
   const comps = l.score?.components?.components ?? {};
+  const price = displayPrice(l);
   const land = l.enrichment?.land_area_m2 ?? l.land_area_m2;
 
   return (
@@ -59,7 +61,17 @@ export default function ListingDetailClient() {
           <p className="text-slate-500">{l.suburb} · {l.property_type}</p>
         </div>
         <div className="text-right">
-          <p className="text-2xl font-bold text-brand-dark">{fmt.money(l.price)}</p>
+          <p className="text-2xl font-bold text-brand-dark">
+            {price.estimated && (
+              <span className="text-base font-normal text-slate-400">est. </span>
+            )}
+            {fmt.money(price.value)}
+          </p>
+          {price.estimated && (
+            <p className="text-xs text-amber-700">
+              {l.price_text || "no price published"} — HouseScout estimate
+            </p>
+          )}
           {l.score && <p className="text-sm text-slate-500">Match score {l.score.match_score.toFixed(0)}/100</p>}
           <div className="mt-1 flex justify-end gap-2">
             <DealBadge listing={l} />

@@ -1,19 +1,18 @@
 // Reference data + types for the static app.
 //
-// Listings are NOT bundled here — they are fetched live from the Trade Me Property
-// API at build time into `public/listings.json` (see scripts/fetch-listings.mjs)
-// and loaded at runtime by lib/api.ts. Suburb medians and mortgage rates below are
-// indicative reference figures (no free live source); they're labelled as such in
-// the UI.
+// Listings are NOT bundled here — they are scraped at build time into
+// `public/listings.json` (see scripts/build_listings.py) and loaded at runtime by
+// lib/api.ts. Suburb medians and mortgage rates below are indicative reference
+// figures (no free live source); they're labelled as such in the UI.
 
 // Where each field on a listing came from. Written by scripts/provenance.py.
-//   observed         – published by the source listing
-//   modelled         – inferred by our build scripts (no published figure)
-//   suburb_centroid  – map pin is the suburb, not a geocode of the section
-//   sample           – hand-written demonstration record
+//   observed        – published by the source listing
+//   not_published   – the source states no price (auction / deadline / POA)
+//   modelled        – produced by our valuation model, not sourced
+//   suburb_centroid – map pin is the suburb, not a geocode of the section
 export type Provenance = {
-  price: "observed" | "modelled";
-  address: "observed" | "sample";
+  price: "observed" | "not_published";
+  address: "observed";
   bedrooms: "observed" | "unknown";
   bathrooms: "observed" | "unknown";
   land_area_m2: "observed" | "unknown";
@@ -22,12 +21,13 @@ export type Provenance = {
   rateable_value: "modelled" | "unknown";
   estimate_value: "modelled" | "unknown";
   rental_estimate_weekly: "modelled" | "unknown";
+  price_estimate: "modelled" | "unknown";
   photos: "source" | "none";
-  record: "scraped" | "sample";
+  record: "scraped";
 };
 
-/** Overall trustworthiness of a listing's headline numbers. */
-export type DataQuality = "observed" | "partial" | "sample";
+/** Whether the headline price is the vendor's or the model's. */
+export type DataQuality = "observed" | "estimated";
 
 export type RawListing = {
   id: number;
@@ -38,7 +38,10 @@ export type RawListing = {
   suburb: string;
   lat: number;
   lng: number;
-  price: number;
+  /** Null when the listing publishes no figure (auction / deadline / POA). */
+  price: number | null;
+  /** The valuation model's estimate, written by scripts/hedonic.py. Always present. */
+  price_estimate?: number | null;
   price_text: string;
   bedrooms: number;
   bathrooms: number;

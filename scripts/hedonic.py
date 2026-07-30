@@ -68,6 +68,11 @@ OUT_JSON = PUBLIC_DIR / "model.json"
 # Kept in step with frontend/lib/data.ts (SUBURBS) and docs/DATA_SOURCES.md.
 # These are indicative reference figures, labelled as such in the UI.
 # --------------------------------------------------------------------------- #
+#
+# Coverage matters more than it looks: an unlisted suburb falls back to the city
+# median, so a premium suburb like Fendalton would be valued as if it were an average
+# one. Since ingestion now reaches above the buyer's cap (see api_scrapers), the
+# higher-priced suburbs need to be here too, not just the affordable ones.
 SUBURB_STATS: dict[str, dict[str, float]] = {
     "Addington":            {"median": 440_000, "yield": 5.3, "growth": 5.0, "cbd_km": 2.0},
     "Aranui":               {"median": 410_000, "yield": 5.8, "growth": 8.0, "cbd_km": 8.5},
@@ -116,6 +121,18 @@ SUBURB_STATS: dict[str, dict[str, float]] = {
     "Waltham":              {"median": 420_000, "yield": 5.7, "growth": 5.0, "cbd_km": 2.5},
     "Wigram":               {"median": 480_000, "yield": 4.7, "growth": 7.0, "cbd_km": 8.0},
     "Woolston":             {"median": 460_000, "yield": 5.6, "growth": 5.5, "cbd_km": 4.0},
+    "Bromley":              {"median":   450_000, "yield": 5.6, "growth": 6.0, "cbd_km": 6.0},
+    "Broomfield":           {"median":   540_000, "yield": 5.0, "growth": 6.5, "cbd_km": 12.0},
+    "Bryndwr":              {"median":   680_000, "yield": 4.3, "growth": 5.0, "cbd_km": 5.0},
+    "Burnside":             {"median":   720_000, "yield": 4.1, "growth": 5.0, "cbd_km": 6.5},
+    "Cracroft":             {"median":   900_000, "yield": 3.6, "growth": 4.5, "cbd_km": 5.0},
+    "Fendalton":            {"median": 1_150_000, "yield": 3.2, "growth": 4.0, "cbd_km": 4.0},
+    "Heathcote Valley":     {"median":   700_000, "yield": 4.2, "growth": 5.0, "cbd_km": 7.0},
+    "Hei Hei":              {"median":   480_000, "yield": 5.4, "growth": 6.5, "cbd_km": 11.0},
+    "Huntsbury":            {"median":   850_000, "yield": 3.7, "growth": 4.5, "cbd_km": 4.5},
+    "Redcliffs":            {"median":   820_000, "yield": 3.9, "growth": 5.5, "cbd_km": 9.0},
+    "Upper Riccarton":      {"median":   620_000, "yield": 4.6, "growth": 4.5, "cbd_km": 5.5},
+    "Yaldhurst":            {"median":   750_000, "yield": 4.2, "growth": 5.5, "cbd_km": 12.0},
 }
 
 CITY_MEDIAN = 455_000.0        # Christchurch sub-$500k segment reference median
@@ -407,6 +424,44 @@ def train(listings: list[dict]) -> dict:
     }
 
 
+# Modelled figures are rounded to this, because quoting an estimate to the dollar
+# ("$488,287") implies a precision the model does not have — its band is +/-16%.
+ESTIMATE_ROUNDING = 1_000
+
+
+def predict_value(listing: dict, coefficients: dict[str, float], medians: dict[str, float]) -> float:
+    """Modelled market value for one listing, in dollars (unrounded)."""
+    row = design_row(listing, medians)
+    log_price = sum(coefficients[f] * v for f, v in zip(FEATURES, row))
+    return math.exp(log_price)
+
+
+def round_estimate(value: float) -> int:
+    """Round a modelled value so it reads as an estimate rather than a valuation."""
+    return int(round(value / ESTIMATE_ROUNDING) * ESTIMATE_ROUNDING)
+
+
+def write_price_estimates(
+    listings: list[dict], coefficients: dict[str, float], medians: dict[str, float]
+) -> int:
+    """Attach ``price_estimate`` to every listing, in place.
+
+    Most Christchurch listings publish no asking price, so something has to fill the
+    gap or the app has no figure to run mortgage maths against. That number now comes
+    from the valuation model — which is documented, cross-validated and carries a
+    confidence band — rather than from an ad-hoc suburb-band formula in a build
+    script, which is what ``expand_listings.py`` used to do.
+
+    ``price`` itself is left untouched: null stays null. The UI shows the published
+    price where one exists and this estimate otherwise, labelled as an estimate.
+    """
+    for listing in listings:
+        listing["price_estimate"] = round_estimate(
+            predict_value(listing, coefficients, medians)
+        )
+    return sum(1 for l in listings if not l.get("price"))
+
+
 def main() -> None:
     PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
     listings: list[dict] = []
@@ -432,6 +487,12 @@ def main() -> None:
         **model,
     }
     OUT_JSON.write_text(json.dumps(payload, indent=2) + "\n")
+
+    # Fill the price gap for listings that publish no figure.
+    if listings:
+        unpriced = write_price_estimates(listings, model["coefficients"], medians)
+        LISTINGS_JSON.write_text(json.dumps(listings, indent=2) + "\n")
+        print(f"  price estimates     : {len(listings)} written ({unpriced} with no published price)")
 
     print(f"  observed-price rows : {model['n_train']} of {len(listings)} listings")
     print(f"  lambda (CV-chosen)  : {model['lambda']}")

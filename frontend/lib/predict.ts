@@ -105,13 +105,14 @@ export type Predictable = {
   has_garage?: boolean | null;
   price?: number | null;
   price_text?: string | null;
+  price_estimate?: number | null;
   land_area_m2?: number | null;
   floor_area_m2?: number | null;
   days_on_market?: number | null;
   enrichment?: { land_area_m2?: number | null } | null;
   // Provenance, written by scripts/provenance.py. Used to tell a genuinely published
   // price from one we inferred — see hasPublishedPrice.
-  data_quality?: "observed" | "partial" | "sample" | null;
+  data_quality?: "observed" | "estimated" | null;
   provenance?: { price?: string; record?: string } | null;
 };
 
@@ -192,6 +193,13 @@ const LABELS: Record<string, string> = {
   is_apartment: "Apartment (vs house)",
 };
 
+/** Modelled figures are rounded to this; see ESTIMATE_ROUNDING in scripts/hedonic.py. */
+const ESTIMATE_ROUNDING = 1_000;
+
+function roundEstimate(value: number): number {
+  return Math.round(value / ESTIMATE_ROUNDING) * ESTIMATE_ROUNDING;
+}
+
 /** Modelled market value, with a band and an explanation of every adjustment. */
 export function valuation(l: Predictable, m: Model): Valuation {
   const c = m.coefficients;
@@ -230,13 +238,15 @@ export function valuation(l: Predictable, m: Model): Valuation {
   contributions.sort((a, b) => Math.abs(b.effect) - Math.abs(a.effect));
 
   return {
-    estimate: Math.round(estimate),
-    low: Math.round(estimate * (1 - m.band)),
-    high: Math.round(estimate * (1 + m.band)),
+    // Rounded to $1k: quoting a modelled value to the dollar implies a precision the
+    // model does not have. Mirrors ESTIMATE_ROUNDING in scripts/hedonic.py.
+    estimate: roundEstimate(estimate),
+    low: roundEstimate(estimate * (1 - m.band)),
+    high: roundEstimate(estimate * (1 + m.band)),
     confidence: m.confidence,
     band: m.band,
     contributions,
-    baseline: Math.round(baseline),
+    baseline: roundEstimate(baseline),
     n_train: m.n_train,
     cv_mae_pct: m.cv_mae_pct,
   };
@@ -255,25 +265,19 @@ export type PricePosition = {
 };
 
 /**
- * Whether this listing's price came from the source rather than from us.
+ * Whether this listing's price came from the source rather than from our model.
  *
- * Mirrors `observed_price` in scripts/hedonic.py, and must stay in step with it —
- * the same definition decides what the model trains on and what the UI is willing
- * to describe as an asking price. Two exclusions:
- *
- *   * no published figure (auction / deadline sale / by negotiation / POA), where
- *     `price` was filled in from a suburb band, and
- *   * sample records, whose "Asking Price $X" text is hand-authored demo data.
+ * Mirrors `observed_price` in scripts/hedonic.py and must stay in step with it — the
+ * same definition decides what the model trains on and what the UI is willing to
+ * describe as an asking price. Auction / deadline sale / by negotiation / POA
+ * listings publish no figure, so `price` is null and `price_estimate` stands in.
  *
  * Provenance is authoritative when present; the regex is the fallback for corpora
  * built by an older pipeline.
  */
 export function hasPublishedPrice(l: Predictable): boolean {
-  if (l.provenance || l.data_quality) {
-    if (l.data_quality === "sample" || l.provenance?.record === "sample") return false;
-    if (l.provenance?.price) return l.provenance.price === "observed";
-    return l.data_quality === "observed";
-  }
+  if (l.provenance?.price) return l.provenance.price === "observed";
+  if (l.data_quality) return l.data_quality === "observed";
   return /\$\s*[\d,]{6,}/.test(l.price_text || "");
 }
 
@@ -288,6 +292,8 @@ export function hasPublishedPrice(l: Predictable): boolean {
  */
 export function pricePosition(l: Predictable, v: Valuation): PricePosition | null {
   if (!l.price || !hasPublishedPrice(l)) return null;
+  // Note: `price` is null for unpublished listings, so this is already the published
+  // figure — `price_estimate` is deliberately not substituted here.
   const deltaDollars = l.price - v.estimate;
   const deltaPct = (deltaDollars / v.estimate) * 100;
   const verdict =
@@ -327,7 +333,7 @@ export type RentForecast = {
  */
 export function rentForecast(l: Predictable, m: Model, v: Valuation): RentForecast {
   const stat = suburbStat(m, l.suburb);
-  const value = l.price ?? v.estimate;
+  const value = l.price ?? l.price_estimate ?? v.estimate;
   const wholeHouseWeekly = (value * (stat.yield / 100)) / 52;
   const beds = l.bedrooms ?? m.medians.bedrooms;
   // Room-let premium: ~1.35x the naive per-bedroom share, tapering for big houses.
@@ -364,7 +370,7 @@ const VOL = 0.075;
 export function growthForecast(l: Predictable, m: Model, v: Valuation, years = 10): GrowthForecast {
   const stat = suburbStat(m, l.suburb);
   const anchor = m.city.growth_pct;
-  const start = l.price ?? v.estimate;
+  const start = l.price ?? l.price_estimate ?? v.estimate;
 
   const points: ForecastPoint[] = [{ year: 0, value: Math.round(start), low: Math.round(start), high: Math.round(start) }];
   let value = start;
@@ -463,7 +469,7 @@ export function negotiationRoom(
   const expectedDollars = published ? Math.round((l.price! * expectedPct) / 100) : 0;
 
   // The ceiling is what the property is worth, regardless of how it is being sold.
-  const ceiling = Math.round(v?.estimate ?? l.price ?? 0);
+  const ceiling = roundEstimate(v?.estimate ?? l.price ?? 0);
   if (!published) {
     drivers.push(
       `No price published — the number that matters is your ceiling, not a discount`,

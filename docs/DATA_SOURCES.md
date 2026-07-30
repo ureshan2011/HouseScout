@@ -3,7 +3,7 @@
 ## Listing sources (scraped — personal use, throttled, ToS-aware)
 | Source | What it gives | Notes |
 |---|---|---|
-| realestate.co.nz | For-sale listings (price, beds, baths, land, photos) | Implemented (`scraper/realestate.py`). Selectors isolated for easy fixes. |
+| realestate.co.nz | For-sale listings (price, beds, baths, land, type, photos) | **Primary source.** Plain-HTTP scraper (`scraper/api_scrapers.py`), newest-first, no browser needed; ~100 listings/run. Also a Playwright path (`scraper/realestate.py`) for richer data when it gets through. |
 | homes.co.nz | Estimate, RV, rental estimate, last sale | Implemented as address enrichment (`scraper/homes.py`); enable with `--estimates`. |
 | OneRoof | Estimate, RV, sold prices | Implemented as enrichment/fallback (`scraper/oneroof.py`). |
 | Trade Me | Largest pool of listings | API **denies** buyer-side use → scrape or skip. |
@@ -82,7 +82,11 @@ No language model is involved anywhere in the analysis path.
 8. Per-user buyer criteria (editable in the app rather than in `lib/data.ts`).
 
 ### Delivered
-- **Photo pipeline** (`scripts/photos.py`): recovers real house photos over plain HTTP
+- **Automatic listing refresh** (`scraper/api_scrapers.py`, wired into
+  `scripts/build_listings.py`): plain-HTTP fetch of current listings, newest-first. Previously
+  dead code whose parser matched markup the site no longer serves, so the 6-hourly cron
+  re-emitted hardcoded seed data. Now pinned by tests.
+- **Photo pipeline** (`scripts/detail_harvest.py`): recovers real house photos over plain HTTP
   from listing detail pages and self-hosts them, with Pillow verification to drop
   headshots, logos and thumbnails. ~85% coverage; the rest render generated artwork.
 - **Valuation model** (`scripts/hedonic.py` + `frontend/lib/predict.ts`) with fair

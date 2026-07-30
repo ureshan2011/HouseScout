@@ -46,6 +46,8 @@ const PROPERTY_TYPE_SCORE: Record<string, number> = {
 // Minimal shape the scorer reads from a listing.
 export type ScorableListing = {
   price?: number | null;
+  /** Valuation-model estimate, used when the listing publishes no price. */
+  price_estimate?: number | null;
   bedrooms?: number | null;
   has_garage?: boolean | null;
   land_area_m2?: number | null;
@@ -58,6 +60,15 @@ export type ScorableListing = {
   } | null;
 };
 
+/**
+ * The price to reason about: published where there is one, otherwise the valuation
+ * model's estimate. Over 80% of Christchurch listings publish no figure, so scoring
+ * only on `price` would give almost the whole market a neutral placeholder.
+ */
+function workingPrice(listing: ScorableListing): number | null | undefined {
+  return listing.price ?? listing.price_estimate;
+}
+
 function backyardM2(listing: ScorableListing): number | null | undefined {
   // Best available land figure (LINZ enrichment preferred over listing field).
   const enr = listing.enrichment || {};
@@ -66,7 +77,7 @@ function backyardM2(listing: ScorableListing): number | null | undefined {
 
 export function passesHardFilters(listing: ScorableListing, c: Criteria): [boolean, string[]] {
   const reasons: string[] = [];
-  const price = listing.price;
+  const price = workingPrice(listing);
   if (price != null && price > c.max_price) {
     reasons.push(`over budget ($${fmt(price)} > $${fmt(c.max_price)})`);
   }
@@ -111,7 +122,7 @@ export function scoreListing(listing: ScorableListing, c: Criteria): ScoreResult
   const comp: Record<string, number> = {};
 
   // Price: reward headroom under the cap; 0 at/over cap.
-  const price = listing.price;
+  const price = workingPrice(listing);
   if (price) {
     comp.price = clamp((c.max_price - price) / Math.max(c.max_price - 250_000, 1));
   } else {

@@ -2,6 +2,10 @@
 
 These flags are what stop a modelled price being displayed as an asking price, so
 their behaviour is load-bearing for the product's honesty, not cosmetic.
+
+The corpus is now scrape-only — hand-written sample records were removed — so there
+are two tiers: a published price ("observed") or the valuation model's estimate
+("estimated").
 """
 from __future__ import annotations
 
@@ -19,6 +23,7 @@ def listing(**kw) -> dict:
         "source_id": "43070799",
         "price": 450_000,
         "price_text": "Asking Price $450,000",
+        "price_estimate": 448_000,
         "bedrooms": 3,
         "bathrooms": 1,
         "land_area_m2": 600,
@@ -41,27 +46,39 @@ def test_published_price_is_marked_observed():
     assert "price" not in a["estimated_fields"]
 
 
-def test_auction_price_is_marked_modelled():
-    a = provenance.annotate(listing(price_text="Auction"))
-    assert a["provenance"]["price"] == "modelled"
-    assert a["data_quality"] == "partial"
-    assert "price" in a["estimated_fields"]
+def test_auction_price_is_marked_not_published():
+    a = provenance.annotate(listing(price_text="Auction", price=None))
+    assert a["provenance"]["price"] == "not_published"
+    assert a["data_quality"] == "estimated"
+    # The model's estimate is what fills the gap, and it is flagged as modelled.
+    assert "price_estimate" in a["estimated_fields"]
 
 
-def test_deadline_sale_and_negotiation_are_modelled():
+def test_deadline_sale_and_negotiation_are_not_published():
     for text in ("Deadline Sale", "By Negotiation", "POA", ""):
-        assert provenance.annotate(listing(price_text=text))["data_quality"] == "partial"
+        a = provenance.annotate(listing(price_text=text, price=None))
+        assert a["data_quality"] == "estimated", text
+
+
+def test_price_estimate_is_flagged_as_modelled_when_present():
+    assert provenance.annotate(listing())["provenance"]["price_estimate"] == "modelled"
+
+
+def test_absent_price_estimate_is_unknown():
+    a = provenance.annotate(listing(price_estimate=None))
+    assert a["provenance"]["price_estimate"] == "unknown"
+    assert "price_estimate" not in a["estimated_fields"]
+
+
+def test_every_record_is_marked_as_scraped():
+    """There is no sample tier any more — the corpus is scrape-only."""
+    assert provenance.annotate(listing())["provenance"]["record"] == "scraped"
+    assert provenance.annotate(listing())["data_quality"] in ("observed", "estimated")
 
 
 def test_enquiries_over_a_figure_counts_as_published():
     a = provenance.annotate(listing(price_text="Enquiries Over $418,000"))
     assert a["provenance"]["price"] == "observed"
-
-
-def test_seed_records_are_flagged_as_sample_regardless_of_price_text():
-    a = provenance.annotate(listing(source_id="SEED-hornby-01"))
-    assert a["provenance"]["record"] == "sample"
-    assert a["data_quality"] == "sample"
 
 
 def test_enrichment_values_are_always_modelled():

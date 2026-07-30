@@ -7,14 +7,14 @@ The listing corpus mixes three very different kinds of number:
 
   1. **Observed** — published by the source listing (an "Asking Price $430,000",
      the bedroom count, the address, the land area).
-  2. **Modelled** — inferred by our own build scripts because the source publishes
-     nothing. Most Christchurch sub-$500k stock sells by Deadline Sale, Auction or
-     "by negotiation" and states *no price*, so ``expand_listings.py`` fills the
-     ``price`` field from a suburb-band estimate. Rateable values, estimate values
-     and rental estimates are likewise fixed multiples of that number, and
-     coordinates are a suburb centroid with a deterministic jitter — not a geocode.
-  3. **Sample** — hand-written demonstration records (``SEED-*`` ids) that keep the
-     app populated when every scraper is blocked.
+  2. **Not published** — the source states no price. Most Christchurch stock sells by
+     Deadline Sale, Auction or "by negotiation", so ``price`` is simply null. The
+     valuation model supplies ``price_estimate`` instead (scripts/hedonic.py), which
+     is cross-validated and carries a confidence band — unlike the suburb-band guess
+     the deleted ``expand_listings.py`` used to write straight into ``price``.
+Hand-written demonstration records used to be a third category. They are gone: the
+build now ships only scraped listings, and an empty scrape produces an empty site
+rather than invented content.
 
 Presenting a modelled price with a dollar sign next to a real address, and running
 mortgage projections off it, reads as a factual asking price. That is fine for a
@@ -28,11 +28,12 @@ figures can be presented as *our estimate* rather than *the price*.
 
 Adds to each listing::
 
-    "provenance": { "price": "observed"|"modelled", "land_area_m2": ..., ... }
+    "provenance": { "price": "observed"|"not_published", "land_area_m2": ..., ... }
     "estimated_fields": ["price", "rateable_value", ...]
-    "data_quality": "observed" | "partial" | "sample"
+    "data_quality": "observed" | "estimated"
 
-Run after build_listings.py / expand_listings.py / merge_listings.py.
+Run after build_listings.py / merge_listings.py, and after hedonic.py has written
+``price_estimate``.
 """
 from __future__ import annotations
 
@@ -45,20 +46,17 @@ PUBLIC_DIR = REPO_ROOT / "frontend" / "public"
 LISTINGS_JSON = PUBLIC_DIR / "listings.json"
 
 PRICE_IN_TEXT = re.compile(r"\$\s*[\d,]{6,}")
-SAMPLE_ID = re.compile(r"^SEED", re.I)
 
 
 def annotate(listing: dict) -> dict:
     """Attach provenance to one listing (in place) and return it."""
-    sid = str(listing.get("source_id") or "")
-    is_sample = bool(SAMPLE_ID.match(sid))
     price_observed = bool(PRICE_IN_TEXT.search(listing.get("price_text") or ""))
     enr = listing.get("enrichment") or {}
 
     prov = {
         # A price is only observed when the listing text actually quotes a figure.
-        "price": "observed" if price_observed else "modelled",
-        "address": "sample" if is_sample else "observed",
+        "price": "observed" if price_observed else "not_published",
+        "address": "observed",
         "bedrooms": "observed" if listing.get("bedrooms") else "unknown",
         "bathrooms": "observed" if listing.get("bathrooms") else "unknown",
         "land_area_m2": "observed" if listing.get("land_area_m2") else "unknown",
@@ -71,18 +69,14 @@ def annotate(listing: dict) -> dict:
         "rateable_value": "modelled" if enr.get("rateable_value") else "unknown",
         "estimate_value": "modelled" if enr.get("estimate_value") else "unknown",
         "rental_estimate_weekly": "modelled" if enr.get("rental_estimate_weekly") else "unknown",
+        # Present when the valuation model filled the gap (scripts/hedonic.py).
+        "price_estimate": "modelled" if listing.get("price_estimate") else "unknown",
         "photos": "source" if listing.get("images") else "none",
-        "record": "sample" if is_sample else "scraped",
+        "record": "scraped",
     }
 
     estimated = sorted(k for k, v in prov.items() if v == "modelled")
-
-    if is_sample:
-        quality = "sample"
-    elif price_observed:
-        quality = "observed"
-    else:
-        quality = "partial"
+    quality = "observed" if price_observed else "estimated"
 
     listing["provenance"] = prov
     listing["estimated_fields"] = estimated
@@ -115,14 +109,14 @@ def main() -> None:
 
     print("=== Data provenance ===")
     print(f"  {len(listings)} listings annotated")
-    for key in ("observed", "partial", "sample"):
+    for key in ("observed", "estimated"):
         if counts.get(key):
             print(f"    {key:<9}: {counts[key]}")
     print(f"  with photos: {photos}/{len(listings)}")
-    if counts.get("partial"):
+    if counts.get("estimated"):
         print(
-            f"  note: {counts['partial']} listings publish no price (auction/deadline);"
-            " their price is shown as a HouseScout estimate"
+            f"  note: {counts['estimated']} listings publish no price (auction/deadline);"
+            " the valuation model supplies price_estimate for those"
         )
 
 

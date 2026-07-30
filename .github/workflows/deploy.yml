@@ -4,10 +4,11 @@ name: Deploy to GitHub Pages
 #   1. API scrapers (fast, no browser) — always succeed as baseline
 #   2. Playwright scrapers (richer data) — one per source, different browser/IP
 #   3. Merge + dedupe
-#   4. Harvest photos over plain HTTP and self-host them (scripts/photos.py)
-#   5. Annotate data provenance (scripts/provenance.py) so modelled figures are
+#   4. Harvest photos + attributes from detail pages (scripts/detail_harvest.py)
+#   5. Train the valuation model (scripts/hedonic.py) -> public/model.json, and fill
+#      `price_estimate` for the listings that publish no price
+#   6. Annotate data provenance (scripts/provenance.py) so modelled figures are
 #      never presented as published ones
-#   6. Train the valuation model (scripts/hedonic.py) -> public/model.json
 #   7. Generate the written per-listing analysis, build the static site, deploy
 #
 # Steps 4-6 are what make the site usable: without the photo harvest the cards render
@@ -46,9 +47,6 @@ jobs:
 
       - name: Run API scrapers + seed data
         run: python scripts/build_listings.py
-
-      - name: Expand with additional sources
-        run: python scripts/expand_listings.py
 
       - name: Upload API results
         uses: actions/upload-artifact@v4
@@ -134,29 +132,27 @@ jobs:
           else
             echo "No browser partials found; using API-scraped listings.json"
           fi
-          # Ensure we always have a baseline if every scraper produced nothing.
-          if [ ! -s frontend/public/listings.json ]; then
-            python scripts/build_listings.py && python scripts/expand_listings.py
-          fi
+          # No fabricated fallback: an empty scrape yields an empty site.
           echo "Final listing count:"
           python -c "import json; d=json.load(open('frontend/public/listings.json')); print(f'  {len(d)} listings from {len(set(l.get(\"suburb\",\"?\") for l in d))} suburbs')"
 
       - name: Install pipeline dependencies
         run: pip install pillow
 
-      # Detail pages are reachable over plain HTTP even when search pages are
-      # bot-blocked, so this recovers real photos for most listings. Never fatal:
-      # a listing without a photo renders generated artwork instead.
-      - name: Harvest and self-host listing photos
-        run: python scripts/photos.py
+      # One fetch per detail page yields both photos and the attributes search tiles
+      # omit — parking especially, without which the garage hard filter excludes every
+      # listing. Never fatal: missing photos render generated artwork instead.
+      - name: Harvest photos and attributes from detail pages
+        run: python scripts/detail_harvest.py
 
-      # Must run before the model trains — the trainer uses these flags to exclude
-      # prices we inferred, which it must never learn from.
-      - name: Annotate data provenance
-        run: python scripts/provenance.py
-
+      # Trains on published prices only, then writes `price_estimate` for the 80%+ of
+      # listings that publish none.
       - name: Train the valuation model
         run: python scripts/hedonic.py
+
+      # After hedonic, so it can see which listings carry a modelled estimate.
+      - name: Annotate data provenance
+        run: python scripts/provenance.py
 
       - name: Generate the written analysis for every listing
         run: python scripts/generate_ai_insights.py

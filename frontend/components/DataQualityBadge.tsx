@@ -4,11 +4,11 @@ import { Listing } from "@/lib/api";
 
 // Tells the user which numbers on a listing are real and which are ours.
 //
-// Most Christchurch stock under $500k sells by Deadline Sale or Auction and
-// publishes no price at all, so `price` on those rows is a HouseScout estimate. A
-// dollar figure next to a real address reads as the asking price unless it is
-// labelled, which would be misleading — and squarely a Fair Trading Act problem once
-// people are paying for this. See scripts/provenance.py for how the flags are set.
+// Over 80% of Christchurch listings sell by Deadline Sale or Auction and publish no
+// price at all. Those rows carry `price: null` and the figure shown comes from the
+// valuation model. A dollar amount next to a real address reads as the asking price
+// unless it is labelled, which would be misleading — and squarely a Fair Trading Act
+// problem once people are paying. See scripts/provenance.py for how flags are set.
 
 const QUALITY: Record<string, { label: string; tone: string; title: string }> = {
   observed: {
@@ -16,19 +16,12 @@ const QUALITY: Record<string, { label: string; tone: string; title: string }> = 
     tone: "bg-emerald-50 text-emerald-800",
     title: "The source listing publishes this asking price.",
   },
-  partial: {
+  estimated: {
     label: "Est. price",
     tone: "bg-amber-50 text-amber-800",
     title:
       "This listing publishes no price (auction / deadline sale / by negotiation). " +
-      "The figure shown is HouseScout's estimate from suburb comparables, not an asking price.",
-  },
-  sample: {
-    label: "Sample data",
-    tone: "bg-slate-100 text-slate-600",
-    title:
-      "A demonstration record, not a live listing — shown so the app stays usable " +
-      "when every scraper is blocked.",
+      "The figure shown is HouseScout's valuation-model estimate, not an asking price.",
   },
 };
 
@@ -65,7 +58,7 @@ export function DataQualityNotice({ listing }: { listing: Listing }) {
   if (!meta) return null;
 
   const FIELD_LABELS: Record<string, string> = {
-    price: "asking price",
+    price_estimate: "price (from the valuation model)",
     rateable_value: "rateable value",
     estimate_value: "estimate value",
     rental_estimate_weekly: "weekly rental estimate",

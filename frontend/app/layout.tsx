@@ -11,10 +11,13 @@ export const metadata: Metadata = {
 const nav = [
   { href: "/", label: "Dashboard" },
   { href: "/listings", label: "Listings" },
+  { href: "/radar", label: "Deal Radar" },
+  { href: "/watchlist", label: "Watchlist" },
   { href: "/planner", label: "Planner" },
   { href: "/insights", label: "Insights" },
   { href: "/guide", label: "Buyer Guide" },
-  { href: "/chat", label: "AI Chat" },
+  { href: "/chat", label: "Assistant" },
+  { href: "/pricing", label: "Plans" },
   { href: "/settings", label: "Settings" },
 ];
 
@@ -23,7 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <div className="min-h-screen">
-          <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
+          <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur print:hidden">
             <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3">
               <Link href="/" className="text-lg font-bold text-brand-dark">
                 🏠 HouseScout
@@ -38,7 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </header>
           <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
-          <footer className="mx-auto max-w-6xl space-y-2 px-4 py-8 text-xs text-slate-400">
+          <footer className="mx-auto max-w-6xl space-y-2 px-4 py-8 text-xs text-slate-400 print:hidden">
             <nav className="flex flex-wrap gap-x-4 gap-y-1">
               <Link href="/privacy" className="hover:text-slate-600 hover:underline">Privacy Policy</Link>
               <Link href="/cookies" className="hover:text-slate-600 hover:underline">Cookie Policy</Link>

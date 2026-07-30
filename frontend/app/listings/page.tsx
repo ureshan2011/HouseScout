@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { api, Listing } from "@/lib/api";
 import { ListingCard } from "@/components/ListingCard";
+import { UpgradePrompt, useFeature } from "@/components/Gate";
+import { FREE_LISTING_LIMIT } from "@/lib/subscription";
 
 // MapLibre touches `window`, so load it client-side only.
 const ListingsMap = dynamic(() => import("@/components/ListingsMap").then((m) => m.ListingsMap), {
@@ -20,6 +22,13 @@ export default function ListingsPage() {
   const [garageOnly, setGarageOnly] = useState(true);
   const [passesOnly, setPassesOnly] = useState(true);
   const [view, setView] = useState<"grid" | "map">("grid");
+  const unlimited = useFeature("unlimitedListings");
+
+  // Free tier sees the best matches; the rest is behind the paywall. Capping the
+  // *tail* rather than the head means the free plan is genuinely useful, which is
+  // what makes the upgrade feel like more rather than an unblock.
+  const capped = unlimited.allowed ? listings : listings.slice(0, FREE_LISTING_LIMIT);
+  const hidden = listings.length - capped.length;
 
   function load() {
     setLoading(true);
@@ -77,13 +86,22 @@ export default function ListingsPage() {
       ) : listings.length === 0 ? (
         <p className="text-sm text-slate-500">No listings match. Loosen the filters, or check that the build-time scrape returned data.</p>
       ) : view === "map" ? (
-        <ListingsMap listings={listings} />
+        <ListingsMap listings={capped} />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {listings.map((l) => (
-            <ListingCard key={l.id} l={l} />
-          ))}
-        </div>
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {capped.map((l) => (
+              <ListingCard key={l.id} l={l} />
+            ))}
+          </div>
+          {hidden > 0 && (
+            <UpgradePrompt
+              feature="unlimitedListings"
+              title={`${hidden} more listings match`}
+              blurb={`The free plan shows your top ${FREE_LISTING_LIMIT} matches. Upgrade to browse every listing, with modelled valuations and Deal Radar.`}
+            />
+          )}
+        </>
       )}
     </div>
   );

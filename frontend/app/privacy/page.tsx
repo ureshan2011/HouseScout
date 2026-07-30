@@ -58,13 +58,16 @@ export default function PrivacyPage() {
         </p>
       </Section>
 
-      <Section title="5. Optional local AI model">
+      <Section title="5. Analysis engine">
         <p>
-          If you choose to connect a local AI model (e.g. LM Studio) via the Settings page, the
-          questions and listing data you submit are sent directly from your browser to the endpoint
-          URL you configure (typically <code>http://localhost</code> on your own machine). HouseScout
-          does not intercept, store or relay that traffic. If you point the endpoint at a third-party
-          service, their privacy terms apply.
+          All analysis — valuations, rent and growth forecasts, negotiation guidance, the property
+          assessments and the assistant&apos;s answers — is computed inside your browser from data
+          delivered with the site. There is no AI service, no model server and no API call: the
+          questions you type and the properties you look at are never transmitted anywhere.
+        </p>
+        <p>
+          Your watchlist, plan selection and preferences are stored in your browser&apos;s local
+          storage on your own device. They are not sent to us and we cannot read them.
         </p>
       </Section>
 

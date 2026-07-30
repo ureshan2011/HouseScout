@@ -28,12 +28,6 @@ class Settings(BaseSettings):
     # LINZ
     linz_api_key: str = ""
 
-    # LM Studio (local Gemma)
-    lmstudio_base_url: str = "http://localhost:1234/v1"
-    lmstudio_api_key: str = "lm-studio"
-    lmstudio_chat_model: str = ""
-    lmstudio_embed_model: str = ""
-
     # Buyer profile
     max_price: float = 500_000
     preapproval: float = 480_000

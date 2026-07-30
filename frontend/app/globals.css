@@ -30,7 +30,29 @@ body {
   @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
 }
 
-/* Lightweight markdown styling for AI output */
+/* Print layout — powers the Pro "print / save as PDF" property report.
+   Chrome and friends offer "Save as PDF" from the print dialog, so a clean print
+   stylesheet gives us PDF export with no rendering dependency. */
+@media print {
+  body {
+    @apply bg-white text-black;
+  }
+  .card {
+    @apply border-slate-300 shadow-none;
+    break-inside: avoid;
+  }
+  /* Interactive chrome and paywall prompts have no place in a printed report. */
+  button,
+  .btn,
+  .btn-ghost {
+    display: none !important;
+  }
+  a[href]::after {
+    content: "";
+  }
+}
+
+/* Lightweight markdown styling for generated analysis */
 .prose-ai h2 { @apply mt-3 text-base font-semibold; }
 .prose-ai strong { @apply font-semibold text-slate-900; }
 .prose-ai ul { @apply ml-5 list-disc space-y-1; }

@@ -68,6 +68,11 @@ OUT_JSON = PUBLIC_DIR / "model.json"
 # Kept in step with frontend/lib/data.ts (SUBURBS) and docs/DATA_SOURCES.md.
 # These are indicative reference figures, labelled as such in the UI.
 # --------------------------------------------------------------------------- #
+#
+# Coverage matters more than it looks: an unlisted suburb falls back to the city
+# median, so a premium suburb like Fendalton would be valued as if it were an average
+# one. Since ingestion now reaches above the buyer's cap (see api_scrapers), the
+# higher-priced suburbs need to be here too, not just the affordable ones.
 SUBURB_STATS: dict[str, dict[str, float]] = {
     "Addington":            {"median": 440_000, "yield": 5.3, "growth": 5.0, "cbd_km": 2.0},
     "Aranui":               {"median": 410_000, "yield": 5.8, "growth": 8.0, "cbd_km": 8.5},
@@ -116,6 +121,18 @@ SUBURB_STATS: dict[str, dict[str, float]] = {
     "Waltham":              {"median": 420_000, "yield": 5.7, "growth": 5.0, "cbd_km": 2.5},
     "Wigram":               {"median": 480_000, "yield": 4.7, "growth": 7.0, "cbd_km": 8.0},
     "Woolston":             {"median": 460_000, "yield": 5.6, "growth": 5.5, "cbd_km": 4.0},
+    "Bromley":              {"median":   450_000, "yield": 5.6, "growth": 6.0, "cbd_km": 6.0},
+    "Broomfield":           {"median":   540_000, "yield": 5.0, "growth": 6.5, "cbd_km": 12.0},
+    "Bryndwr":              {"median":   680_000, "yield": 4.3, "growth": 5.0, "cbd_km": 5.0},
+    "Burnside":             {"median":   720_000, "yield": 4.1, "growth": 5.0, "cbd_km": 6.5},
+    "Cracroft":             {"median":   900_000, "yield": 3.6, "growth": 4.5, "cbd_km": 5.0},
+    "Fendalton":            {"median": 1_150_000, "yield": 3.2, "growth": 4.0, "cbd_km": 4.0},
+    "Heathcote Valley":     {"median":   700_000, "yield": 4.2, "growth": 5.0, "cbd_km": 7.0},
+    "Hei Hei":              {"median":   480_000, "yield": 5.4, "growth": 6.5, "cbd_km": 11.0},
+    "Huntsbury":            {"median":   850_000, "yield": 3.7, "growth": 4.5, "cbd_km": 4.5},
+    "Redcliffs":            {"median":   820_000, "yield": 3.9, "growth": 5.5, "cbd_km": 9.0},
+    "Upper Riccarton":      {"median":   620_000, "yield": 4.6, "growth": 4.5, "cbd_km": 5.5},
+    "Yaldhurst":            {"median":   750_000, "yield": 4.2, "growth": 5.5, "cbd_km": 12.0},
 }
 
 CITY_MEDIAN = 455_000.0        # Christchurch sub-$500k segment reference median

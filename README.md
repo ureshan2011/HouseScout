@@ -92,9 +92,21 @@ cd frontend && NEXT_PUBLIC_BASE_PATH=/<repo> npm run build   # static site in fr
 For a user/org root site (`https://<user>.github.io/`) or a custom domain, leave
 `NEXT_PUBLIC_BASE_PATH` unset.
 
-### Live listings via automatic multi-source scraping (no keys)
+### Live listings — fetched automatically every 6 hours (no keys)
 
-The deploy workflow scrapes several sources **in parallel** and merges them — **no API keys**:
+`scraper/api_scrapers.py` fetches current listings over **plain HTTP**, sorted newest-first
+(`?by=latest`), paginating until it runs out. This is the runner that keeps the dataset fresh,
+and it needs no browser: search pages are reachable without one.
+
+> **This was previously dead code.** The scrapers existed but nothing imported them, and their
+> HTML parser targeted markup the site no longer serves — it returned an empty list rather than
+> raising, so every 6-hourly build silently re-emitted the same hardcoded seed listings. Both
+> are fixed, and `backend/tests/test_api_scrapers.py` now pins the extraction so a site change
+> breaks a test instead of quietly freezing the dataset.
+
+A typical run pulls ~100 live listings across 50+ suburbs.
+
+The deploy workflow additionally runs Playwright scrapers **in parallel** and merges them:
 
 - **Parallel agents:** a CI matrix runs one job per source (`realestate.co.nz`, `trademe.co.nz`,
   `oneroof.co.nz`), each on its **own runner** (different IP) with a **different browser engine**
@@ -107,9 +119,17 @@ The deploy workflow scrapes several sources **in parallel** and merges them — 
   photos.
 - **Every 6 hours:** a `cron` schedule refreshes the data (plus on every push to `main`).
 
-Sources & engines are configured in `scraper/sites.py`. Tunables via workflow env:
-`SCRAPE_PRICE_MAX` (500000), `SCRAPE_MAX_PAGES` (5). Run all sources locally with
-`python scripts/scrape_listings.py`, or one with `SCRAPE_SOURCE=trademe.co.nz`.
+Sources & engines are configured in `scraper/sites.py`. Tunables via env:
+`SCRAPE_PRICE_CEILING` (1000000), `SCRAPE_MAX_PAGES` (8), `SCRAPE_PRICE_MAX` (500000, Playwright
+path). Run the HTTP scrapers with `python scripts/build_listings.py`, the browser scrapers with
+`python scripts/scrape_listings.py` (or one via `SCRAPE_SOURCE=trademe.co.nz`).
+
+**Why ingestion reaches above $500k.** In the sub-$500k Christchurch segment essentially nothing
+publishes an asking price — it all sells by auction or deadline sale — so capping collection at
+the buyer's budget leaves the valuation model with almost no real prices to calibrate on. A $650k
+house with 4 bedrooms on 800m² is still a valid observation of how bedrooms and land are priced.
+The buyer's actual budget is applied downstream by the hard filters in `scoring.py`, which is
+where a preference belongs rather than in data collection.
 
 > ⚠️ **Trade-offs of keyless scraping.** Real-estate sites use bot protection that frequently
 > blocks CI servers, so a source — or a whole build — can legitimately return **no listings**;

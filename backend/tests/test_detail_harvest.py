@@ -1,8 +1,13 @@
-"""Tests for the photo pipeline (scripts/photos.py).
+"""Tests for the detail-page harvest (scripts/detail_harvest.py).
 
-The bug this pipeline fixed was blank listing cards, so the tests cover the two
-things that caused it: picking the wrong image variant, and letting non-photos
-(agent headshots, logos, thumbnails) through as house pictures.
+This module fixed two blocking bugs, and the tests cover both:
+
+  * **Blank listing cards** — from picking the wrong image variant, or letting
+    non-photos (agent headshots, logos, thumbnails) through as house pictures.
+  * **An empty result set** — search tiles carry no parking data and repeat the
+    address as the "description", so garage detection saw nothing and every listing
+    came back ``has_garage: False``. A garage is one of the buyer's hard filters, so
+    the entire grid was empty. Detail pages state it explicitly.
 """
 from __future__ import annotations
 
@@ -15,7 +20,9 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-import photos  # noqa: E402
+import detail_harvest  # noqa: E402
+
+photos = detail_harvest  # the module handles photos and attributes from one fetch
 
 PIL = pytest.importorskip("PIL", reason="Pillow drives the image checks")
 from PIL import Image  # noqa: E402
@@ -185,7 +192,10 @@ def test_harvest_keeps_newly_downloaded_photos(monkeypatch):
     )
     listings = [{"id": 1, "images": []}, {"id": 2, "images": []}]
     stats = photos.harvest(listings, workers=1)
-    assert stats == {"listings": 2, "with_photos": 2, "photos": 2, "coverage_pct": 100.0}
+    assert stats["listings"] == 2
+    assert stats["with_photos"] == 2
+    assert stats["photos"] == 2
+    assert stats["coverage_pct"] == 100.0
 
 
 def test_harvest_survives_a_listing_that_raises(monkeypatch):
@@ -206,3 +216,134 @@ def test_harvest_normalises_a_missing_images_key(monkeypatch):
     listings = [{"id": 1}]
     photos.harvest(listings, workers=1)
     assert listings[0]["images"] == []
+
+
+# --------------------------------------------------------------------------- #
+# Attribute extraction from detail pages
+#
+# Each feature is an <svg> whose <title> names it, followed by a span with the value.
+# --------------------------------------------------------------------------- #
+def feature(label: str, value: str) -> str:
+    return (
+        f'<svg aria-labelledby="x"><title id="x">{label}</title></svg>'
+        f'<span class="leading-[-1]">{value}</span>'
+    )
+
+
+def detail_page(*features: str, description: str = "A tidy home in a quiet street.") -> str:
+    body = "".join(features)
+    return (
+        f"<html><body>{body}"
+        f'<div data-test="description-content__description">{description}</div>'
+        f"</body></html>"
+    )
+
+
+def test_extract_features_reads_labelled_values():
+    html = detail_page(
+        feature("Bedroom", "3"),
+        feature("Bathroom", "1"),
+        feature("Garage", "1"),
+        feature("Land area", "620m<sup>2</sup>"),
+        feature("Floor area", "107m<sup>2</sup>"),
+    )
+    f = photos.extract_features(html)
+    assert f["Bedroom"] == "3"
+    assert f["Garage"] == "1"
+    assert "620m" in f["Land area"]
+
+
+def test_extract_features_ignores_navigation_icons():
+    """The page has share/nav icons with titles too; only real features count."""
+    html = detail_page(feature("mobile navigation", "House"), feature("Garage", "2"))
+    f = photos.extract_features(html)
+    assert "mobile navigation" not in f
+    assert f["Garage"] == "2"
+
+
+def test_extract_description_returns_the_prose():
+    html = detail_page(description="Beautifully renovated three-bedroom home.")
+    assert photos.extract_description(html) == "Beautifully renovated three-bedroom home."
+
+
+def test_extract_description_returns_none_when_absent():
+    assert photos.extract_description("<html><body>nothing</body></html>") is None
+
+
+def test_apply_detail_fields_sets_garage_from_the_feature_count():
+    l = {"has_garage": False, "car_spaces": None}
+    photos.apply_detail_fields(l, detail_page(feature("Garage", "1")))
+    assert l["has_garage"] is True
+    assert l["car_spaces"] == 1
+
+
+def test_a_carport_alone_does_not_count_as_a_garage():
+    """The buyer's hard filter is specifically a garage, not any covered parking."""
+    l = {"has_garage": False}
+    photos.apply_detail_fields(
+        l, detail_page(feature("Carport", "2"), description="Carport only, no lock-up.")
+    )
+    assert l["has_garage"] is False
+    assert l["car_spaces"] == 2
+
+
+def test_garage_mentioned_only_in_prose_is_still_detected():
+    l = {"has_garage": False}
+    photos.apply_detail_fields(l, detail_page(description="Single garage with internal access."))
+    assert l["has_garage"] is True
+
+
+def test_apply_detail_fields_replaces_the_address_masquerading_as_description():
+    l = {"address": "51 Bickerton Street", "description": "51 Bickerton Street"}
+    photos.apply_detail_fields(l, detail_page(description="Real prose about the home."))
+    assert l["description"] == "Real prose about the home."
+
+
+def test_apply_detail_fields_fills_missing_areas_only():
+    l = {"land_area_m2": None, "floor_area_m2": None}
+    photos.apply_detail_fields(
+        l, detail_page(feature("Land area", "620m2"), feature("Floor area", "107m2"))
+    )
+    assert l["land_area_m2"] == 620.0
+    assert l["floor_area_m2"] == 107.0
+    assert l["enrichment"]["land_area_m2"] == 620.0
+
+
+def test_apply_detail_fields_does_not_overwrite_known_areas():
+    l = {"land_area_m2": 500.0}
+    photos.apply_detail_fields(l, detail_page(feature("Land area", "620m2")))
+    assert l["land_area_m2"] == 500.0
+
+
+def test_apply_detail_fields_fills_missing_bed_and_bath_counts():
+    l = {"bedrooms": None, "bathrooms": None}
+    photos.apply_detail_fields(l, detail_page(feature("Bedroom", "4"), feature("Bathroom", "2")))
+    assert l["bedrooms"] == 4
+    assert l["bathrooms"] == 2
+
+
+def test_apply_detail_fields_reports_what_it_changed():
+    l = {"has_garage": False}
+    updated = photos.apply_detail_fields(l, detail_page(feature("Garage", "1")))
+    assert "has_garage" in updated
+    assert "description" in updated
+
+
+def test_apply_detail_fields_is_safe_on_an_empty_page():
+    l = {"has_garage": False, "bedrooms": 3}
+    assert photos.apply_detail_fields(l, "<html></html>") == []
+    assert l["bedrooms"] == 3
+
+
+def test_parking_totals_combine_garage_carport_and_off_street():
+    l = {}
+    photos.apply_detail_fields(
+        l,
+        detail_page(
+            feature("Garage", "1"),
+            feature("Carport", "1"),
+            feature("Off street parking", "2"),
+        ),
+    )
+    assert l["car_spaces"] == 4
+    assert l["has_garage"] is True

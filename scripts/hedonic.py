@@ -424,6 +424,44 @@ def train(listings: list[dict]) -> dict:
     }
 
 
+# Modelled figures are rounded to this, because quoting an estimate to the dollar
+# ("$488,287") implies a precision the model does not have — its band is +/-16%.
+ESTIMATE_ROUNDING = 1_000
+
+
+def predict_value(listing: dict, coefficients: dict[str, float], medians: dict[str, float]) -> float:
+    """Modelled market value for one listing, in dollars (unrounded)."""
+    row = design_row(listing, medians)
+    log_price = sum(coefficients[f] * v for f, v in zip(FEATURES, row))
+    return math.exp(log_price)
+
+
+def round_estimate(value: float) -> int:
+    """Round a modelled value so it reads as an estimate rather than a valuation."""
+    return int(round(value / ESTIMATE_ROUNDING) * ESTIMATE_ROUNDING)
+
+
+def write_price_estimates(
+    listings: list[dict], coefficients: dict[str, float], medians: dict[str, float]
+) -> int:
+    """Attach ``price_estimate`` to every listing, in place.
+
+    Most Christchurch listings publish no asking price, so something has to fill the
+    gap or the app has no figure to run mortgage maths against. That number now comes
+    from the valuation model — which is documented, cross-validated and carries a
+    confidence band — rather than from an ad-hoc suburb-band formula in a build
+    script, which is what ``expand_listings.py`` used to do.
+
+    ``price`` itself is left untouched: null stays null. The UI shows the published
+    price where one exists and this estimate otherwise, labelled as an estimate.
+    """
+    for listing in listings:
+        listing["price_estimate"] = round_estimate(
+            predict_value(listing, coefficients, medians)
+        )
+    return sum(1 for l in listings if not l.get("price"))
+
+
 def main() -> None:
     PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
     listings: list[dict] = []
@@ -449,6 +487,12 @@ def main() -> None:
         **model,
     }
     OUT_JSON.write_text(json.dumps(payload, indent=2) + "\n")
+
+    # Fill the price gap for listings that publish no figure.
+    if listings:
+        unpriced = write_price_estimates(listings, model["coefficients"], medians)
+        LISTINGS_JSON.write_text(json.dumps(listings, indent=2) + "\n")
+        print(f"  price estimates     : {len(listings)} written ({unpriced} with no published price)")
 
     print(f"  observed-price rows : {model['n_train']} of {len(listings)} listings")
     print(f"  lambda (CV-chosen)  : {model['lambda']}")

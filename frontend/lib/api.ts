@@ -36,6 +36,8 @@ export type Listing = {
   lat?: number | null;
   lng?: number | null;
   price?: number | null;
+  /** Valuation-model estimate; the figure to show when `price` is null. */
+  price_estimate?: number | null;
   price_text?: string | null;
   bedrooms?: number | null;
   bathrooms?: number | null;
@@ -99,6 +101,7 @@ function loadData(): Promise<DataSet> {
         lat: r.lat,
         lng: r.lng,
         price: r.price,
+        price_estimate: r.price_estimate,
         price_text: r.price_text,
         bedrooms: r.bedrooms,
         bathrooms: r.bathrooms,
@@ -152,7 +155,11 @@ function filterAndSort(d: DataSet, qs: string): Listing[] {
   let rows = d.scored.slice();
   if (suburb) rows = rows.filter((l) => l.suburb === suburb);
   if (propertyType) rows = rows.filter((l) => l.property_type === propertyType);
-  if (maxPrice != null) rows = rows.filter((l) => l.price != null && l.price <= maxPrice);
+  if (maxPrice != null)
+    rows = rows.filter((l) => {
+      const p = l.price ?? l.price_estimate;
+      return p != null && p <= maxPrice;
+    });
   if (minBedrooms != null) rows = rows.filter((l) => (l.bedrooms ?? 0) >= minBedrooms);
   if (garageOnly) rows = rows.filter((l) => l.has_garage);
   if (passesOnly) rows = rows.filter((l) => l.score?.passes_filters);
@@ -160,19 +167,16 @@ function filterAndSort(d: DataSet, qs: string): Listing[] {
   const score = (l: Listing) => l.score?.match_score ?? -Infinity;
   const days = (l: Listing) => d.rawById.get(l.id)?.days_on_market ?? Infinity;
 
-  // Demonstration records exist only so the app stays usable when every scraper is
-  // blocked. They must never outrank a real listing, however well they happen to
-  // score — a sample property at the top of the results is actively misleading.
-  const isSample = (l: Listing) => (l.data_quality === "sample" ? 1 : 0);
+  // Sorting and filtering by price must use the working figure, or the 80%+ of
+  // listings that publish no price would sort as if they were free.
+  const workingPrice = (l: Listing) => l.price ?? l.price_estimate ?? null;
 
-  const by = (cmp: (a: Listing, b: Listing) => number) =>
-    rows.sort((a, b) => isSample(a) - isSample(b) || cmp(a, b));
-
-  if (sort === "score") by((a, b) => score(b) - score(a));
-  else if (sort === "price") by((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
-  else if (sort === "price_desc") by((a, b) => (b.price ?? -Infinity) - (a.price ?? -Infinity));
-  else if (sort === "newest") by((a, b) => days(a) - days(b)); // fewer days on market = newer
-  else by(() => 0);
+  if (sort === "score") rows.sort((a, b) => score(b) - score(a));
+  else if (sort === "price")
+    rows.sort((a, b) => (workingPrice(a) ?? Infinity) - (workingPrice(b) ?? Infinity));
+  else if (sort === "price_desc")
+    rows.sort((a, b) => (workingPrice(b) ?? -Infinity) - (workingPrice(a) ?? -Infinity));
+  else if (sort === "newest") rows.sort((a, b) => days(a) - days(b)); // fewer days = newer
 
   return rows.slice(offset, offset + limit);
 }
@@ -181,7 +185,9 @@ function scenarioFor(d: DataSet, id: number, qs: string): Finance {
   const l = d.byId.get(id);
   const p = new URLSearchParams(qs.replace(/^\?/, ""));
   const s: Scenario = {
-    price: l?.price ?? DEFAULTS.preapproval,
+    // Mortgage maths needs a figure; fall back to the model's estimate, then to
+    // the pre-approval ceiling.
+    price: l?.price ?? l?.price_estimate ?? DEFAULTS.preapproval,
     deposit: num(p.get("deposit")) ?? DEFAULTS.deposit,
     annual_rate: num(p.get("annual_rate")) ?? DEFAULTS.annual_rate,
     term_years: num(p.get("term_years")) ?? DEFAULTS.term_years,
@@ -201,13 +207,18 @@ export const api = {
   stats: async () => {
     const d = await loadData();
     const passing = d.scored.filter((l) => l.score?.passes_filters);
-    const prices = passing.map((l) => l.price).filter((p): p is number => p != null);
+    const prices = passing
+      .map((l) => l.price ?? l.price_estimate)
+      .filter((p): p is number => p != null);
     const avg = prices.length ? prices.reduce((a, b) => a + b, 0) / prices.length : null;
     const top = passing
       .slice()
       .sort((a, b) => (b.score?.match_score ?? 0) - (a.score?.match_score ?? 0))
       .slice(0, 3)
-      .map((t) => ({ id: t.id, address: t.address, suburb: t.suburb, price: t.price, score: t.score?.match_score ?? null }));
+      .map((t) => ({
+        id: t.id, address: t.address, suburb: t.suburb,
+        price: t.price ?? t.price_estimate, score: t.score?.match_score ?? null,
+      }));
     return {
       total_listings: d.scored.length,
       matching_listings: passing.length,

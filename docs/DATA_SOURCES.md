@@ -86,7 +86,7 @@ No language model is involved anywhere in the analysis path.
   `scripts/build_listings.py`): plain-HTTP fetch of current listings, newest-first. Previously
   dead code whose parser matched markup the site no longer serves, so the 6-hourly cron
   re-emitted hardcoded seed data. Now pinned by tests.
-- **Photo pipeline** (`scripts/photos.py`): recovers real house photos over plain HTTP
+- **Photo pipeline** (`scripts/detail_harvest.py`): recovers real house photos over plain HTTP
   from listing detail pages and self-hosts them, with Pillow verification to drop
   headshots, logos and thumbnails. ~85% coverage; the rest render generated artwork.
 - **Valuation model** (`scripts/hedonic.py` + `frontend/lib/predict.ts`) with fair

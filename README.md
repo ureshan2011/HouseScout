@@ -51,7 +51,7 @@ Key modules added since v1:
 
 | Module | Does |
 |---|---|
-| `scripts/photos.py` | Recovers real house photos over plain HTTP and self-hosts them. |
+| `scripts/detail_harvest.py` | Recovers real house photos over plain HTTP and self-hosts them. |
 | `scripts/provenance.py` | Labels where every number came from (observed / modelled / sample). |
 | `scripts/hedonic.py` | Trains the valuation model → `frontend/public/model.json`. |
 | `frontend/lib/predict.ts` | Evaluates the model in the browser: value, rent, growth, negotiation, deal score. |
@@ -141,17 +141,25 @@ where a preference belongs rather than in data collection.
 > Suburb medians and mortgage rates on the Insights page are indicative reference figures
 > (no free live source) and are labelled as such.
 
-### Photos
+### Photos and attributes (detail pages)
 
-Search pages are aggressively bot-protected, but **detail pages are reachable over plain
-HTTP** — so `scripts/photos.py` fetches each listing's page, extracts its gallery, picks the
-largest variant of each distinct photo, verifies with Pillow that it is a plausible house
-picture (dropping agent headshots, logos and thumbnails) and writes it under
-`public/photos/`. Self-hosting matters: hotlinked mediaserver URLs rotate and expire, which
-silently blanks the grid.
+Search pages give you a listing's identity but not much else. `scripts/detail_harvest.py`
+fetches each listing's detail page — reachable over plain HTTP — and takes two things from
+the same request:
 
-Typical coverage is ~85%. Listings without a photo render deterministic generated artwork
-rather than an empty box, and any photo that 404s at runtime falls back to the same artwork.
+**Photos.** Extracts the gallery, picks the largest variant of each distinct photo, verifies
+with Pillow that it is a plausible house picture (dropping agent headshots, logos and
+thumbnails) and self-hosts it under `public/photos/`. Self-hosting matters: hotlinked
+mediaserver URLs rotate and expire, which silently blanks the grid. Coverage is ~99%;
+anything missing renders deterministic generated artwork rather than an empty box, as does
+any photo that 404s at runtime.
+
+**Attributes.** Search tiles carry **no parking information at all**, and their
+"description" field just repeats the address — so garage detection found nothing and every
+listing came back `has_garage: false`. Since a garage is one of the buyer's hard filters,
+that made the entire result set empty. Detail pages state garage and carport counts
+explicitly, plus floor area and the real prose description. ~80% of listings have a garage
+once this runs.
 
 ## Quick start
 

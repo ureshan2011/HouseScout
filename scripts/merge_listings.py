@@ -57,7 +57,7 @@ def main() -> None:
     PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
     listings: list[dict] = []
 
-    # Load the existing listings.json (from build_listings + expand_listings) as the base.
+    # Load the existing listings.json (written by build_listings.py) as the base.
     if OUT_JSON.exists():
         try:
             base = json.loads(OUT_JSON.read_text())

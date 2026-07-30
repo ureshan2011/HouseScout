@@ -1,28 +1,29 @@
 #!/usr/bin/env python3
-"""Photo pipeline: recover real house photos for listings and self-host them.
+"""Detail-page harvest: photos **and** the attributes search pages don't carry.
 
-Why this exists
----------------
-Listing cards were rendering as blank grey boxes because almost no listing carried
-a usable photo:
+Detail pages are reachable over plain HTTP even though search pages are behind bot
+protection, so one fetch per listing yields far more than the search tile does. Both
+things this module extracts were blocking bugs:
 
-  * the API/seed path in ``build_listings.py`` and ``expand_listings.py`` wrote
-    ``images: []`` for nearly every row, and
-  * the Playwright path (the only code that downloaded photos) is routinely
-    bot-blocked in CI, so ``public/photos/`` never materialised.
+**Photos.** Cards rendered as blank grey boxes because almost no listing carried a
+usable photo — the hand-written seed data wrote ``images: []``, and the only code
+that downloaded any was the Playwright path, which is routinely blocked in CI. Here
+we pull the mediaserver URLs out of the markup, pick the largest variant of each
+distinct photo, verify each decodes as a plausible house picture, and self-host it
+under ``public/photos/``. Self-hosting matters beyond reliability: hotlinked
+mediaserver URLs rotate and expire, which would silently blank the grid again.
 
-Search pages are protected, but **detail pages are reachable over plain HTTP**.
-Every listing that carries a real realestate.co.nz listing id therefore has its
-gallery recoverable without a browser: fetch ``/<id>``, pull the mediaserver
-URLs out of the markup, pick the largest variant of each distinct photo, verify
-it decodes as a plausible house picture, and write it under ``public/photos/``.
+**Attributes.** Search tiles carry no parking information at all, and their
+"description" field is just the address repeated — so garage detection saw nothing
+and *every* listing came back ``has_garage: False``. Since a garage is one of the
+buyer's hard filters, the entire result set was empty. Detail pages state garage and
+carport counts explicitly, alongside floor area and the real listing description.
 
-Self-hosting matters for more than reliability: hotlinked mediaserver URLs can be
-rotated or expire at any time, which would silently blank the grid again.
+Both are harvested from the same fetch, so enriching costs no extra requests.
 
-Every failure path is non-fatal — a listing that yields no photo keeps
-``images: []`` and the frontend draws a deterministic generated placeholder
-instead (see ``frontend/components/PropertyImage.tsx``).
+Every failure path is non-fatal: a listing that yields no photo keeps ``images: []``
+and the frontend draws generated artwork (``frontend/components/PropertyImage.tsx``);
+a listing that yields no attributes keeps whatever the search page gave us.
 """
 from __future__ import annotations
 
@@ -161,21 +162,130 @@ def detail_page_url(listing: dict) -> str | None:
 
 
 # --------------------------------------------------------------------------- #
+# Attribute extraction
+#
+# Each feature on a detail page is an <svg> whose <title> names it, followed by a
+# span holding the value:
+#     <svg …><title id="…">Garage</title>…</svg><span class="leading-[-1]">1</span>
+# Keying on the <title> text is stable — it is the icon's accessible name, so it
+# cannot be renamed without breaking screen readers.
+# --------------------------------------------------------------------------- #
+TITLE_RE = re.compile(r"<title[^>]*>([^<]{1,40})</title>", re.S)
+VALUE_RE = re.compile(r'<span class="leading-\[-1\]">(.{0,120}?)</span>', re.S)
+TAG_RE = re.compile(r"<[^>]+>")
+DESCRIPTION_RE = re.compile(
+    r'data-test="description-content__description"[^>]*>(.{0,6000}?)</div>', re.S
+)
+
+# Only these labels are meaningful; the page also has nav and share icons with titles.
+WANTED_FEATURES = {
+    "Bedroom", "Bedrooms", "Bathroom", "Bathrooms", "Garage", "Garages",
+    "Carport", "Carports", "Off street parking", "Floor area", "Land area",
+}
+
+
+def _plain(fragment: str) -> str:
+    return re.sub(r"\s+", " ", TAG_RE.sub("", fragment)).strip()
+
+
+def extract_features(html: str) -> dict[str, str]:
+    """Map feature label -> raw value string, e.g. {"Garage": "1", "Land area": "620m2"}."""
+    out: dict[str, str] = {}
+    for m in TITLE_RE.finditer(html):
+        label = m.group(1).strip()
+        if label not in WANTED_FEATURES or label in out:
+            continue
+        value = VALUE_RE.search(html, m.end())
+        if value:
+            out[label] = _plain(value.group(1))
+    return out
+
+
+def extract_description(html: str) -> str | None:
+    """The listing's real prose description, not the address the search tile repeats."""
+    m = DESCRIPTION_RE.search(html)
+    if not m:
+        return None
+    text = _plain(m.group(1))
+    return text or None
+
+
+def _first_int(text: str | None) -> int | None:
+    if not text:
+        return None
+    m = re.match(r"\s*(\d+)", text)
+    return int(m.group(1)) if m else None
+
+
+def apply_detail_fields(listing: dict, html: str) -> list[str]:
+    """Fill attributes the search page couldn't supply. Returns the fields updated.
+
+    Only fills gaps and corrects the two fields search pages get wrong (parking,
+    description) — anything the search page stated correctly is left alone.
+    """
+    updated: list[str] = []
+    features = extract_features(html)
+
+    garages = _first_int(features.get("Garage") or features.get("Garages"))
+    carports = _first_int(features.get("Carport") or features.get("Carports"))
+    off_street = _first_int(features.get("Off street parking"))
+    spaces = sum(v for v in (garages, carports, off_street) if v)
+
+    if spaces:
+        listing["car_spaces"] = spaces
+        updated.append("car_spaces")
+    # A garage proper — a carport or an open pad is not one, and the buyer's hard
+    # filter is specifically for a garage.
+    if garages:
+        listing["has_garage"] = True
+        updated.append("has_garage")
+
+    description = extract_description(html)
+    if description:
+        listing["description"] = description
+        updated.append("description")
+        # Some listings name a garage only in prose ("internal access garaging").
+        if not listing.get("has_garage") and re.search(
+            r"\bgarag|\binternal access\b", description, re.I
+        ):
+            listing["has_garage"] = True
+            updated.append("has_garage")
+
+    for label, key in (("Floor area", "floor_area_m2"), ("Land area", "land_area_m2")):
+        value = _first_int(features.get(label))
+        if value and not listing.get(key):
+            listing[key] = float(value)
+            updated.append(key)
+            if key == "land_area_m2":
+                listing.setdefault("enrichment", {})["land_area_m2"] = float(value)
+
+    for label, key in (("Bedroom", "bedrooms"), ("Bathroom", "bathrooms")):
+        value = _first_int(features.get(label) or features.get(label + "s"))
+        if value and not listing.get(key):
+            listing[key] = value
+            updated.append(key)
+
+    return updated
+
+
+# --------------------------------------------------------------------------- #
 # Harvest
 # --------------------------------------------------------------------------- #
 def harvest_one(listing: dict, max_photos: int = MAX_PER_LISTING) -> list[dict]:
-    """Download and verify photos for one listing; return new ``images`` entries.
+    """Harvest one listing's detail page: photos returned, attributes applied in place.
 
-    Tries URLs already on the listing first, then falls back to scraping the
-    detail page gallery. Returns ``[]`` when nothing usable could be fetched.
+    Tries photo URLs already on the listing first, then the detail-page gallery. The
+    same fetched HTML also fills in parking, description and areas. Returns ``[]``
+    when no usable photo could be fetched.
     """
     lid = listing.get("id")
     urls = candidate_urls(listing)
 
     page = detail_page_url(listing)
-    if len(urls) < max_photos and page:
+    if page:
         html = _fetch_text(page)
         if html:
+            apply_detail_fields(listing, html)
             for url in largest_variants(html, max_photos):
                 if url not in urls:
                     urls.append(url)
@@ -229,6 +339,11 @@ def harvest(listings: list[dict], max_photos: int = MAX_PER_LISTING, workers: in
         "with_photos": with_photos,
         "photos": total,
         "coverage_pct": round(100 * with_photos / len(listings), 1) if listings else 0.0,
+        "with_garage": sum(1 for l in listings if l.get("has_garage")),
+        "with_description": sum(
+            1 for l in listings if (l.get("description") or "") and
+            l.get("description") != l.get("address")
+        ),
     }
 
 
@@ -247,19 +362,23 @@ def main() -> None:
             limit = int(sys.argv[i + 2])
     target = listings[:limit] if limit else listings
 
-    print(f"=== Photo harvest ({len(target)} listings) ===")
+    print(f"=== Detail-page harvest ({len(target)} listings) ===")
     stats = harvest(target)
     LISTINGS_JSON.write_text(json.dumps(listings, indent=2) + "\n")
     print(
-        f"  photos: {stats['photos']} across {stats['with_photos']}/{stats['listings']} "
+        f"  photos      : {stats['photos']} across {stats['with_photos']}/{stats['listings']} "
         f"listings ({stats['coverage_pct']}% coverage)"
     )
+    print(f"  with garage : {stats['with_garage']}/{stats['listings']}")
+    print(f"  descriptions: {stats['with_description']}/{stats['listings']}")
     if stats["coverage_pct"] < 50:
-        print("  note: low coverage — remaining listings render a generated placeholder")
+        print("  note: low coverage — remaining listings render generated artwork")
+    if not stats["with_garage"]:
+        print("  ! no garages detected — the garage hard filter will exclude everything")
 
 
 if __name__ == "__main__":
     try:
         main()
-    except Exception as exc:  # noqa: BLE001 — never fail the site build over photos
-        print(f"! photo harvest failed ({exc}); listings keep their existing images")
+    except Exception as exc:  # noqa: BLE001 — never fail the site build over this
+        print(f"! detail harvest failed ({exc}); listings keep what the search page gave")

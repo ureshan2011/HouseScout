@@ -80,12 +80,9 @@ def test_observed_price_rejects_listings_with_no_published_figure(text):
     assert hedonic.observed_price(l) is None
 
 
-def test_observed_price_rejects_hand_written_sample_records():
-    # A SEED record quotes a plausible-looking asking price that we authored.
-    l = listing(
-        source_id="SEED-hornby-01",
-        provenance={"price": "observed", "record": "sample"},
-    )
+def test_observed_price_still_rejects_legacy_sample_records():
+    """Belt and braces: hand-written records are gone, but a stale corpus may exist."""
+    l = listing(source_id="SEED-hornby-01", provenance={"price": "observed", "record": "sample"})
     assert hedonic.observed_price(l) is None
 
 
@@ -329,6 +326,32 @@ def test_a_townhouse_is_valued_below_an_equivalent_house():
 
     assert value("townhouse") < value("house")
     assert value("apartment") < value("townhouse")
+
+
+def test_write_price_estimates_fills_every_listing():
+    model = hedonic.train([])
+    medians = hedonic.dataset_medians([])
+    corpus = [
+        listing(price=None, price_text="Auction"),
+        listing(price=450_000, price_text="Asking Price $450,000"),
+    ]
+    unpriced = hedonic.write_price_estimates(corpus, model["coefficients"], medians)
+    assert unpriced == 1
+    for l in corpus:
+        assert l["price_estimate"] > 100_000
+    # `price` is never overwritten — a published figure stays published, and a null
+    # stays null so the UI can tell the two apart.
+    assert corpus[0]["price"] is None
+    assert corpus[1]["price"] == 450_000
+
+
+def test_price_estimate_tracks_the_suburb():
+    model = hedonic.train([])
+    medians = hedonic.dataset_medians([])
+    cheap = listing(suburb="Aranui", price=None, price_text="Auction")
+    dear = listing(suburb="Fendalton", price=None, price_text="Auction")
+    hedonic.write_price_estimates([cheap, dear], model["coefficients"], medians)
+    assert dear["price_estimate"] > cheap["price_estimate"]
 
 
 def test_dataset_medians_ignore_missing_values():

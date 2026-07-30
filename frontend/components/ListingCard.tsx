@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Listing, fmt } from "@/lib/api";
+import { displayPrice } from "@/lib/price";
 import { PropertyImage } from "@/components/PropertyImage";
 import { DataQualityBadge } from "@/components/DataQualityBadge";
 import { WATCHLIST_EVENT, isWatched, toggleWatch } from "@/lib/watchlist";
@@ -51,6 +52,7 @@ export function ListingCard({ l }: { l: Listing }) {
   const score = l.score?.match_score ?? 0;
   const rooms = l.score?.components?.rentable_rooms ?? 0;
   const land = l.enrichment?.land_area_m2 ?? l.land_area_m2;
+  const price = displayPrice(l);
 
   return (
     <div className="card relative overflow-hidden transition hover:shadow-md">
@@ -63,7 +65,10 @@ export function ListingCard({ l }: { l: Listing }) {
         </div>
         <div className="space-y-1 p-3">
           <div className="flex items-baseline justify-between gap-2">
-            <p className="font-semibold">{fmt.money(l.price)}</p>
+            <p className="font-semibold">
+              {price.estimated && <span className="text-slate-400" title="HouseScout estimate — no price published">~</span>}
+              {fmt.money(price.value)}
+            </p>
             <span className="text-xs uppercase text-slate-400">{l.property_type}</span>
           </div>
           <DataQualityBadge listing={l} compact />

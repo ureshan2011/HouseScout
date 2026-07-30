@@ -5,6 +5,16 @@ import { useParams } from "next/navigation";
 import { api, Finance, fmt, Listing } from "@/lib/api";
 import { PayoffChart } from "@/components/PayoffChart";
 import { Markdown } from "@/components/Markdown";
+import { PropertyGallery } from "@/components/PropertyImage";
+import { DataQualityNotice } from "@/components/DataQualityBadge";
+import {
+  ValuationCard,
+  NegotiationCard,
+  ForecastCard,
+  RentCard,
+  DealBadge,
+} from "@/components/ValuationPanel";
+import { PrintReportButton } from "@/components/PrintReport";
 
 export default function ListingDetailClient() {
   const params = useParams<{ id: string }>();
@@ -14,7 +24,7 @@ export default function ListingDetailClient() {
   const [fin, setFin] = useState<Finance | null>(null);
   const [insight, setInsight] = useState<string>("");
   const [insightModel, setInsightModel] = useState<string | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
 
   useEffect(() => {
     api.listing(lid).then((x) => {
@@ -22,19 +32,18 @@ export default function ListingDetailClient() {
       setLoaded(true);
     });
     api.financeForListing(lid).then(setFin).catch(() => {});
-    // Auto-load the AI analysis baked at build time.
-    getInsight(false);
+    getInsight();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lid]);
 
-  async function getInsight(refresh = false) {
-    setAiLoading(true);
+  async function getInsight() {
+    setAnalysisLoading(true);
     try {
-      const r = await api.insight(lid, refresh);
+      const r = await api.insight(lid);
       setInsight(r.content);
       setInsightModel(r.model);
     } finally {
-      setAiLoading(false);
+      setAnalysisLoading(false);
     }
   }
 
@@ -52,13 +61,19 @@ export default function ListingDetailClient() {
         <div className="text-right">
           <p className="text-2xl font-bold text-brand-dark">{fmt.money(l.price)}</p>
           {l.score && <p className="text-sm text-slate-500">Match score {l.score.match_score.toFixed(0)}/100</p>}
+          <div className="mt-1 flex justify-end gap-2">
+            <DealBadge listing={l} />
+          </div>
         </div>
       </div>
 
-      {l.images?.[0] && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={l.images[0].url} alt={l.address ?? ""} className="h-64 w-full rounded-xl object-cover" />
-      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <PrintReportButton />
+      </div>
+
+      <PropertyGallery listing={l} />
+
+      <DataQualityNotice listing={l} />
 
       <div className="grid gap-6 md:grid-cols-3">
         <Spec label="Bedrooms" value={l.bedrooms} />
@@ -87,6 +102,14 @@ export default function ListingDetailClient() {
         </div>
       </section>
 
+      {/* Prediction engine — valuation, rent, negotiation, growth */}
+      <ValuationCard listing={l} />
+      <RentCard listing={l} />
+      <div className="grid gap-6 md:grid-cols-2">
+        <NegotiationCard listing={l} />
+        <ForecastCard listing={l} />
+      </div>
+
       {/* Finance */}
       {fin && (
         <section className="card p-4">
@@ -114,20 +137,19 @@ export default function ListingDetailClient() {
         </section>
       )}
 
-      {/* AI insight */}
+      {/* Written analysis, generated at build time from this listing's numbers */}
       <section className="card p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <h2 className="font-semibold">AI analysis</h2>
-            {insightModel && <p className="text-xs text-slate-400">{insightModel}</p>}
-          </div>
-          <div className="flex gap-2">
-            <button className="btn-ghost" onClick={() => getInsight(true)} disabled={aiLoading} title="Re-run with your local LM Studio model if configured">
-              {aiLoading ? "Thinking…" : "Refresh with local model"}
-            </button>
-          </div>
+        <div className="mb-3">
+          <h2 className="font-semibold">Property analysis</h2>
+          {insightModel && <p className="text-xs text-slate-400">{insightModel}</p>}
         </div>
-        {insight ? <Markdown text={insight} /> : <p className="text-sm text-slate-500">{aiLoading ? "Analysing…" : "Loading AI analysis…"}</p>}
+        {insight ? (
+          <Markdown text={insight} />
+        ) : (
+          <p className="text-sm text-slate-500">
+            {analysisLoading ? "Loading analysis…" : "No written analysis for this listing."}
+          </p>
+        )}
       </section>
 
       {l.url && (

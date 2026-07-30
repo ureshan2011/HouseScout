@@ -4,17 +4,18 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, fmt, Listing } from "@/lib/api";
 import { ListingCard } from "@/components/ListingCard";
+import { Model, loadModel } from "@/lib/predict";
 
 export default function Dashboard() {
   const [stats, setStats] = useState<any>(null);
   const [top, setTop] = useState<Listing[]>([]);
-  const [ai, setAi] = useState<any>(null);
+  const [model, setModel] = useState<Model | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     api.stats().then(setStats).catch((e) => setErr(String(e)));
     api.listings("?sort=score&limit=6").then(setTop).catch(() => {});
-    api.aiHealth().then(setAi).catch(() => setAi({ available: false }));
+    loadModel().then(setModel).catch(() => setModel(null));
   }, []);
 
   if (err)
@@ -41,16 +42,19 @@ export default function Dashboard() {
         <Stat label="Matching your criteria" value={stats ? fmt.num(stats.matching_listings) : "…"} />
         <Stat label="Avg matching price" value={stats ? fmt.money(stats.avg_matching_price) : "…"} />
         <Stat
-          label="AI analysis"
-          value={ai ? (ai.available ? "Local model" : "Built-in") : "…"}
-          hint={ai?.available ? ai.models?.[0] : "Baked insights + offline chat"}
+          label="Valuation model"
+          value={model ? `${model.confidence} confidence` : "…"}
+          hint={model ? `calibrated on ${model.n_train} listed prices` : undefined}
         />
       </section>
 
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Top recommendations</h2>
-          <Link href="/listings" className="text-sm text-brand-dark hover:underline">View all →</Link>
+          <div className="flex gap-3 text-sm">
+            <Link href="/radar" className="text-brand-dark hover:underline">Deal Radar →</Link>
+            <Link href="/listings" className="text-brand-dark hover:underline">View all →</Link>
+          </div>
         </div>
         {top.length === 0 ? (
           <p className="text-sm text-slate-500">

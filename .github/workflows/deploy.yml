@@ -1,18 +1,22 @@
 name: Deploy to GitHub Pages
 
-# Multi-runner scraping strategy:
+# Build pipeline:
 #   1. API scrapers (fast, no browser) — always succeed as baseline
 #   2. Playwright scrapers (richer data) — one per source, different browser/IP
-#   3. Merge all results, dedupe, build static site, deploy
+#   3. Merge + dedupe
+#   4. Harvest photos over plain HTTP and self-host them (scripts/photos.py)
+#   5. Annotate data provenance (scripts/provenance.py) so modelled figures are
+#      never presented as published ones
+#   6. Train the valuation model (scripts/hedonic.py) -> public/model.json
+#   7. Generate the written per-listing analysis, build the static site, deploy
 #
-# This ensures the site always has content (API scrapers are reliable fallback)
-# while the Playwright scrapers add richer data when they can get through.
+# Steps 4-6 are what make the site usable: without the photo harvest the cards render
+# placeholders, and without the model there is nothing to sell.
 
 on:
   push:
     branches:
       - main
-      - claude/github-pages-web-app-d8to5j
   workflow_dispatch:
   schedule:
     - cron: "0 */6 * * *" # every 6 hours
@@ -137,7 +141,24 @@ jobs:
           echo "Final listing count:"
           python -c "import json; d=json.load(open('frontend/public/listings.json')); print(f'  {len(d)} listings from {len(set(l.get(\"suburb\",\"?\") for l in d))} suburbs')"
 
-      - name: Generate AI analysis for every listing
+      - name: Install pipeline dependencies
+        run: pip install pillow
+
+      # Detail pages are reachable over plain HTTP even when search pages are
+      # bot-blocked, so this recovers real photos for most listings. Never fatal:
+      # a listing without a photo renders generated artwork instead.
+      - name: Harvest and self-host listing photos
+        run: python scripts/photos.py
+
+      # Must run before the model trains — the trainer uses these flags to exclude
+      # prices we inferred, which it must never learn from.
+      - name: Annotate data provenance
+        run: python scripts/provenance.py
+
+      - name: Train the valuation model
+        run: python scripts/hedonic.py
+
+      - name: Generate the written analysis for every listing
         run: python scripts/generate_ai_insights.py
 
       - uses: actions/setup-node@v4
@@ -149,6 +170,10 @@ jobs:
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
+
+      - name: Typecheck
+        working-directory: frontend
+        run: npx tsc --noEmit
 
       - name: Build static export
         working-directory: frontend

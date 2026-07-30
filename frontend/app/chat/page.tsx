@@ -18,11 +18,11 @@ export default function Chat() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
-  const [ai, setAi] = useState<any>(null);
+  const [engine, setEngine] = useState<{ name: string } | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    api.aiHealth().then(setAi).catch(() => setAi({ available: false }));
+    api.engine().then(setEngine).catch(() => setEngine(null));
   }, []);
   useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [msgs]);
 
@@ -46,11 +46,7 @@ export default function Chat() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">AI assistant</h1>
         <div className="flex items-center gap-2">
-          {ai && (
-            <span className={`badge ${ai.available ? "bg-emerald-100 text-emerald-800" : "bg-indigo-100 text-indigo-800"}`}>
-              {ai.available ? "Local model online" : "Built-in AI"}
-            </span>
-          )}
+          {engine && <span className="badge bg-indigo-100 text-indigo-800">{engine.name}</span>}
           <div className="flex rounded-lg border border-slate-300 text-sm">
             <button className={`px-3 py-1.5 ${mode === "chat" ? "bg-brand text-white" : ""}`} onClick={() => setMode("chat")}>
               Listings
@@ -62,13 +58,12 @@ export default function Chat() {
         </div>
       </div>
 
-      {!ai?.available && (
-        <p className="card bg-indigo-50 p-3 text-sm text-indigo-800">
-          Using HouseScout's built-in AI — answers are grounded in the live listing data and Christchurch buyer
-          knowledge base. For free-form, conversational answers you can optionally run a local LM Studio model and
-          set its endpoint in Settings.
-        </p>
-      )}
+      <p className="card bg-indigo-50 p-3 text-sm text-indigo-800">
+        Answers are computed in your browser from the loaded listing data, the finance engine and a
+        Christchurch buyer knowledge base — no model server, no API key, works offline. Ask about
+        specific listings in <strong>Listings</strong> mode, or mortgages, tax and strategy in{" "}
+        <strong>Mortgage/Invest</strong> mode.
+      </p>
 
       <div className="card min-h-[50vh] space-y-4 p-4">
         {msgs.length === 0 && (
@@ -88,7 +83,7 @@ export default function Chat() {
             </div>
           </div>
         ))}
-        {busy && <p className="text-sm text-slate-400">Gemma is thinking…</p>}
+        {busy && <p className="text-sm text-slate-400">Working…</p>}
         <div ref={endRef} />
       </div>
 

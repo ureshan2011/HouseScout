@@ -1,24 +1,45 @@
 # 🏠 HouseScout — Christchurch House-Buying Intelligence
 
-An AI-powered platform to find, analyse and finance a first home in **Christchurch, NZ**, built
-around one strategy: **buy under $500k with a garage + backyard, live in it, rent the spare rooms to
-boarders, and pay the mortgage off as fast as possible.**
+A platform to find, analyse and finance a first home in **Christchurch, NZ**, built around one
+strategy: **buy under $500k with a garage + backyard, live in it, rent the spare rooms to boarders,
+and pay the mortgage off as fast as possible.**
 
-It scrapes listings, enriches them with free official **LINZ** land data, ranks them against your
-criteria, runs full **mortgage + boarder-income + accelerated-payoff** analysis, and adds an AI layer
-(recommendations, chat, mortgage/investment advice) powered by your **local LM Studio (Gemma)** — so
-the smart features run 24/7 on your own RTX 4080 with zero API cost.
+It scrapes listings, self-hosts their photos, enriches them with free official **LINZ** land data,
+ranks them against your criteria, runs full **mortgage + boarder-income + accelerated-payoff**
+analysis, and puts a **valuation model** on top — fair value, over/under-priced, predicted rent,
+capital-growth forecast and negotiation room.
 
-> Personal-use tool. Property estimates are indicative, not registered valuations.
+**Everything runs in-process.** No model server, no API keys, no per-query cost: the valuation model
+is trained at build time and evaluated in your browser, and the written analysis is generated from
+each listing's own numbers. It works offline, costs nothing to run, and every figure traces back to a
+coefficient or a listing field you can inspect.
+
+> Property estimates are indicative, not registered valuations.
 > Land data © LINZ (CC-BY 4.0). Not financial advice.
+
+## ⚠️ Read this before trusting a price
+
+Most Christchurch stock under $500k sells by **auction or deadline sale and publishes no price at
+all**. For those listings the price you see is **HouseScout's own estimate**, labelled `Est. price`
+in the UI. Roughly 85% of a typical build falls into this category.
+
+The app is built around that constraint rather than hiding it:
+
+- every listing carries machine-readable provenance (`scripts/provenance.py`);
+- the valuation model trains **only** on genuinely published asking prices;
+- no "gap to modelled value" is shown when there is no published price to compare against;
+- model confidence is reported honestly, and is currently **low**.
+
+See [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md#data-provenance-important) for the full picture.
 
 ## Architecture
 
 ```
-backend/    FastAPI · SQLAlchemy · SQLite · APScheduler   (API, scoring, finance, AI proxy)
+backend/    FastAPI · SQLAlchemy · SQLite · APScheduler   (API, scoring, finance, analysis)
 scraper/    Playwright scrapers + LINZ enrichment          (run by CLI or the scheduler)
-frontend/   Next.js 15 · TypeScript · Tailwind · Recharts  (dashboard)
-data/        SQLite db + image cache (gitignored)
+scripts/    Build pipeline: scrape → photos → provenance → model → analysis
+frontend/   Next.js 15 · TypeScript · Tailwind · Recharts  (the app)
+data/       SQLite db + image cache (gitignored)
 ```
 
 The finance and scoring engines are **pure functions** (`backend/app/finance.py`,
@@ -26,16 +47,28 @@ The finance and scoring engines are **pure functions** (`backend/app/finance.py`
 mirrored 1:1 in TypeScript (`frontend/lib/finance.ts`, `frontend/lib/scoring.ts`) so the
 app can also run **fully static**, with no backend at all.
 
+Key modules added since v1:
+
+| Module | Does |
+|---|---|
+| `scripts/photos.py` | Recovers real house photos over plain HTTP and self-hosts them. |
+| `scripts/provenance.py` | Labels where every number came from (observed / modelled / sample). |
+| `scripts/hedonic.py` | Trains the valuation model → `frontend/public/model.json`. |
+| `frontend/lib/predict.ts` | Evaluates the model in the browser: value, rent, growth, negotiation, deal score. |
+| `backend/app/analysis.py` | Deterministic written analysis + Q&A, shared by the backend and the static build. |
+| `frontend/lib/subscription.ts` | Tiers and feature entitlements. |
+
 ## Two ways to run it
 
-| Mode | What runs | Data | AI |
-|------|-----------|------|----|
-| **Static web app** (GitHub Pages) | Just the frontend, entirely in the browser | **Real Christchurch listings scraped from multiple sites at build time** (keyless, parallel) + scored in the browser | Calls your local LM Studio endpoint directly from the browser |
-| **Full stack** (local/24-7) | FastAPI + SQLite + scheduler + Playwright scraper | Live scraped + LINZ-enriched listings in a database | Local Gemma via the backend proxy |
+| Mode | What runs | Data | Analysis |
+|------|-----------|------|----------|
+| **Static web app** (GitHub Pages) | Just the frontend, entirely in the browser | Christchurch listings scraped at build time (keyless, parallel), photos self-hosted, scored in the browser | In-browser: valuation model + baked written analysis |
+| **Full stack** (local/24-7) | FastAPI + SQLite + scheduler + Playwright scraper | Live scraped + LINZ-enriched listings in a database | In-process (`backend/app/analysis.py`) |
 
-The static build scrapes live listings (with photos) automatically when GitHub Actions builds
-the site, and refreshes them daily — no API keys. Run the Python backend when you want LINZ
-land data and a persistent database.
+Both modes use the same deterministic engines — there is nothing external to install or
+configure. The static build scrapes listings and harvests photos automatically when GitHub
+Actions builds the site, and refreshes every 6 hours — no API keys. Run the Python backend when
+you want LINZ land data and a persistent database.
 
 ## Deploy to GitHub Pages (static web app)
 
@@ -86,12 +119,19 @@ Sources & engines are configured in `scraper/sites.py`. Tunables via workflow en
 > live in `scraper/sites.py` and may need updating when a site's HTML changes.
 
 > Suburb medians and mortgage rates on the Insights page are indicative reference figures
-> (no free live source) and are labelled as such; the **listings** are real.
+> (no free live source) and are labelled as such.
 
-**AI in the static build:** the frontend talks to an OpenAI-compatible endpoint (LM Studio)
-directly from your browser — set the endpoint under **Settings**. Browsers treat
-`http://localhost` as trusted, so an HTTPS Pages site can still reach a local LM Studio
-server (enable CORS in LM Studio if requests are blocked). Everything else works offline.
+### Photos
+
+Search pages are aggressively bot-protected, but **detail pages are reachable over plain
+HTTP** — so `scripts/photos.py` fetches each listing's page, extracts its gallery, picks the
+largest variant of each distinct photo, verifies with Pillow that it is a plausible house
+picture (dropping agent headshots, logos and thumbnails) and writes it under
+`public/photos/`. Self-hosting matters: hotlinked mediaserver URLs rotate and expire, which
+silently blanks the grid.
+
+Typical coverage is ~85%. Listings without a photo render deterministic generated artwork
+rather than an empty box, and any photo that 404s at runtime falls back to the same artwork.
 
 ## Quick start
 
@@ -120,13 +160,22 @@ npm run dev                            # http://localhost:3000  (self-contained,
 > (scraped from realestate.co.nz at build time) and computes scoring/finance in the browser. The
 > Python backend is optional and used for LINZ enrichment and persistence.
 
-### 3. Local AI (optional but recommended)
-1. Install **LM Studio** on your Windows PC and load a Gemma model (e.g. `gemma-3-27b-it`).
-2. Load an embedding model too (e.g. `nomic-embed-text`) for richer RAG.
-3. Start LM Studio's **local server** (default `http://localhost:1234`).
-4. Set `LMSTUDIO_*` in `.env`. The dashboard shows "Gemma online" when connected.
+### 3. Analysis engine
 
-Everything works without LM Studio — AI features simply report "offline".
+Nothing to install. Valuation, rent, growth, negotiation and the written per-listing analysis
+are all computed in-process:
+
+```bash
+python scripts/provenance.py          # label observed vs modelled figures
+python scripts/hedonic.py             # train the valuation model -> public/model.json
+python scripts/generate_ai_insights.py  # write the per-listing analysis -> public/insights.json
+```
+
+HouseScout previously proxied these features to a local LM Studio (Gemma) server. That has
+been removed: it only worked for one person on one machine with a GPU, an HTTPS page calling
+`http://localhost` is blocked outright by some browsers, and nothing a subscriber pays for
+should depend on it. The replacement is faster, free, identical for every user, works offline,
+and cannot invent a fact about someone's largest purchase.
 
 ## Live data (scraping)
 ```bash
@@ -145,24 +194,63 @@ Insights page, and chat embeddings rebuilt from Settings.
 > and don't redistribute scraped data. A free **LINZ API key** (https://data.linz.govt.nz/) enables
 > reliable land-area (backyard) data.
 
+## Plans & monetisation
+
+`/pricing` ships three tiers (`frontend/lib/subscription.ts`):
+
+| Tier | Price | Unlocks |
+|---|---|---|
+| **Scout** | Free | 12 top matches, match score, mortgage + boarder calculator, payoff simulator, suburb table, buyer guide |
+| **Buyer Pro** | $19/mo | Unlimited listings, modelled fair value, price position, negotiation room, growth forecast, Deal Radar, watchlist & compare, CSV export, printable reports |
+| **Investor** | $49/mo | Rate stress testing, portfolio modelling, equity projections |
+
+**Billing is not live.** The site is a static export, so all gating is client-side: it is a
+product mechanism for building and testing the paywall, **not** a security boundary — anyone
+can unlock every tier from the browser console, and the underlying data sits in
+`listings.json` regardless.
+
+Before charging real money, three things must change:
+
+1. A payment provider (Stripe Checkout / Paddle) with a webhook recording subscriptions.
+2. An authenticated `/api/entitlement` endpoint. `resolveEntitlement()` in
+   `frontend/lib/subscription.ts` is the single seam to swap — every `<Gate>` follows.
+3. **Gate the data, not just the UI:** serve the paid analysis (valuation, forecasts, Deal
+   Radar) from that authenticated endpoint rather than the public JSON.
+
+Also worth resolving before taking payment: the scraped sources' terms restrict
+redistribution, which is a different question for a commercial product than for a personal
+tool. And model confidence is currently **low** — see the roadmap in `docs/DATA_SOURCES.md`
+for the highest-leverage fix (real sold-price history to train on).
+
 ## Tests
 ```bash
-cd backend && python -m pytest -q
+cd backend && python -m pytest -q     # engines, model, provenance, photo pipeline
+cd frontend && npx tsc --noEmit       # typecheck
 ```
+
+CI (`.github/workflows/ci.yml`) runs both on every push, plus an end-to-end smoke test of the
+build pipeline.
 
 ## Run 24/7 on Windows
 - **Backend + scheduler:** run `uvicorn app.main:app --port 8000` as a service via
   [NSSM](https://nssm.cc/) or Task Scheduler.
 - **Frontend:** `npm run build && npm run start`, kept alive with `pm2` or a service wrapper.
-- Keep **LM Studio** running with the local server enabled.
 
 ## Key features
 - **Matching:** hard filters (price ≤ cap, garage, backyard), townhouses ranked lowest, weighted
   0–100 score with rentability emphasised.
 - **Finance:** mortgage P&I, boarder income with the **IRD $245/wk-per-boarder tax-free** rule
   (max 4), **accelerated-payoff simulator** ("years to mortgage-free"), yield & cashflow.
-- **AI:** per-listing pros/cons & negotiation angles, embedding-backed RAG chat over your
-  matches (with score-ordered fallback), and a mortgage/investment advisor — all on local Gemma.
+- **Valuation model:** modelled fair value with a confidence band and a feature-by-feature
+  explanation, over/under-priced vs the model, predicted per-room and whole-house rent, a
+  mean-reverting 10-year growth forecast, negotiation room, and a composite deal score
+  (`scripts/hedonic.py` + `frontend/lib/predict.ts`).
+- **Deal Radar:** the whole market ranked by opportunity rather than by fit.
+- **Watchlist & compare:** shortlist properties and compare them side by side; CSV export
+  and printable reports.
+- **Analysis:** per-listing pros/cons & negotiation angles, listing Q&A and a
+  mortgage/investment advisor — all deterministic and in-process, no model server.
+- **Provenance:** every figure labelled observed / modelled / sample.
 - **Insights:** suburb affordability-vs-yield table and live mortgage rates (interest.co.nz).
 - **Map:** MapLibre listings map with score-coloured price markers (free OSM basemap).
 - **Enrichment:** free LINZ land area + homes.co.nz/OneRoof estimates, RV and rental estimates.

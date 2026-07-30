@@ -6,6 +6,29 @@
 // indicative reference figures (no free live source); they're labelled as such in
 // the UI.
 
+// Where each field on a listing came from. Written by scripts/provenance.py.
+//   observed         – published by the source listing
+//   modelled         – inferred by our build scripts (no published figure)
+//   suburb_centroid  – map pin is the suburb, not a geocode of the section
+//   sample           – hand-written demonstration record
+export type Provenance = {
+  price: "observed" | "modelled";
+  address: "observed" | "sample";
+  bedrooms: "observed" | "unknown";
+  bathrooms: "observed" | "unknown";
+  land_area_m2: "observed" | "unknown";
+  floor_area_m2: "observed" | "unknown";
+  coordinates: "suburb_centroid" | "geocoded";
+  rateable_value: "modelled" | "unknown";
+  estimate_value: "modelled" | "unknown";
+  rental_estimate_weekly: "modelled" | "unknown";
+  photos: "source" | "none";
+  record: "scraped" | "sample";
+};
+
+/** Overall trustworthiness of a listing's headline numbers. */
+export type DataQuality = "observed" | "partial" | "sample";
+
 export type RawListing = {
   id: number;
   source: string;
@@ -33,6 +56,9 @@ export type RawListing = {
     estimate_value: number | null;
     rental_estimate_weekly: number | null;
   };
+  provenance?: Provenance | null;
+  estimated_fields?: string[] | null;
+  data_quality?: DataQuality | null;
 };
 
 export type Suburb = {

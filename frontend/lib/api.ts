@@ -6,7 +6,7 @@
 // The public surface (types, `api`, `fmt`) is unchanged so the pages/components
 // keep working as-is.
 
-import { DEFAULTS, RATES, SUBURBS, RawListing } from "./data";
+import { DEFAULTS, RATES, SUBURBS, RawListing, Provenance, DataQuality } from "./data";
 import { analyse, FinanceResult, Scenario } from "./finance";
 import { defaultCriteria, scoreListing } from "./scoring";
 import * as ai from "./ai";
@@ -48,6 +48,10 @@ export type Listing = {
   images: { url: string; position: number }[];
   enrichment?: Enrichment | null;
   score?: Score | null;
+  days_on_market?: number | null;
+  provenance?: Provenance | null;
+  estimated_fields?: string[] | null;
+  data_quality?: DataQuality | null;
 };
 
 export type Finance = FinanceResult;
@@ -107,6 +111,10 @@ function loadData(): Promise<DataSet> {
         // Photos are self-hosted under /photos; resolve against the Pages base path.
         images: (r.images || []).map((im) => ({ url: assetUrl(im.url), position: im.position })),
         enrichment: r.enrichment,
+        days_on_market: r.days_on_market,
+        provenance: r.provenance,
+        estimated_fields: r.estimated_fields,
+        data_quality: r.data_quality,
         score: {
           match_score: s.match_score,
           passes_filters: s.passes_filters,
@@ -151,10 +159,20 @@ function filterAndSort(d: DataSet, qs: string): Listing[] {
 
   const score = (l: Listing) => l.score?.match_score ?? -Infinity;
   const days = (l: Listing) => d.rawById.get(l.id)?.days_on_market ?? Infinity;
-  if (sort === "score") rows.sort((a, b) => score(b) - score(a));
-  else if (sort === "price") rows.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
-  else if (sort === "price_desc") rows.sort((a, b) => (b.price ?? -Infinity) - (a.price ?? -Infinity));
-  else if (sort === "newest") rows.sort((a, b) => days(a) - days(b)); // fewer days on market = newer
+
+  // Demonstration records exist only so the app stays usable when every scraper is
+  // blocked. They must never outrank a real listing, however well they happen to
+  // score — a sample property at the top of the results is actively misleading.
+  const isSample = (l: Listing) => (l.data_quality === "sample" ? 1 : 0);
+
+  const by = (cmp: (a: Listing, b: Listing) => number) =>
+    rows.sort((a, b) => isSample(a) - isSample(b) || cmp(a, b));
+
+  if (sort === "score") by((a, b) => score(b) - score(a));
+  else if (sort === "price") by((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
+  else if (sort === "price_desc") by((a, b) => (b.price ?? -Infinity) - (a.price ?? -Infinity));
+  else if (sort === "newest") by((a, b) => days(a) - days(b)); // fewer days on market = newer
+  else by(() => 0);
 
   return rows.slice(offset, offset + limit);
 }
@@ -218,41 +236,20 @@ export const api = {
     }),
   financeDefaults: async () => ({ ...DEFAULTS }),
 
-  // --- AI (runs in the browser against the configured LM Studio endpoint) ---
-  aiHealth: () => ai.health(),
+  // --- Analysis (all local: baked insights + the in-browser reasoning engine) ---
+  engine: async () => ({ name: ai.ENGINE_NAME, local: true }),
 
-  insight: async (id: number, refresh = false) => {
-    if (!refresh && insightCache.has(id)) {
+  insight: async (id: number) => {
+    if (insightCache.has(id)) {
       const c = insightCache.get(id)!;
       return { ok: true, content: c.content, model: c.model };
     }
-    // Default: serve the AI analysis baked at build time (works with no model server).
-    if (!refresh) {
-      const baked = await ai.bakedInsightFor(id);
-      if (baked) {
-        insightCache.set(id, { content: baked.content, model: baked.model });
-        return baked;
-      }
-    }
-    // Refresh (or no baked insight): call a live local model if configured.
-    const d = await loadData();
-    const l = d.byId.get(id);
-    if (!l) return { ok: false, content: "Listing not found", model: null };
-    const fin = scenarioFor(d, id, "");
-    const listingPayload = {
-      address: l.address, suburb: l.suburb, price: l.price, price_text: l.price_text,
-      bedrooms: l.bedrooms, bathrooms: l.bathrooms, has_garage: l.has_garage,
-      land_area_m2: l.land_area_m2, property_type: l.property_type, description: l.description,
-    };
-    const score = { match_score: l.score?.match_score, components: l.score?.components?.components };
-    const r = await ai.listingInsight(listingPayload, fin, score);
-    if (r.ok) {
-      insightCache.set(id, { content: r.content, model: r.model });
-      return r;
-    }
-    // Live model unavailable — fall back to the baked analysis if we have it.
     const baked = await ai.bakedInsightFor(id);
-    return baked ?? r;
+    if (baked) {
+      insightCache.set(id, { content: baked.content, model: baked.model });
+      return baked;
+    }
+    return ai.listingInsight();
   },
 
   chat: async (question: string) => {
@@ -281,9 +278,7 @@ export const api = {
 
   advisor: (question: string) => ai.advisor(question),
 
-  // --- No-ops in the static build (need a backend) — return friendly notices ---
-  reindex: async () =>
-    ({ ok: false, reason: "Semantic reindexing needs the optional Python backend; chat uses score-ranked matches instead." }),
+  // --- Needs the optional Python backend — return friendly notices ---
   refreshRates: async () =>
     ({ ok: false, error: "Live rate scraping needs the optional Python backend. The rates shown are the bundled snapshot." }),
 };

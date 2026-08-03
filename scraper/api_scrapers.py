@@ -15,8 +15,18 @@ import urllib.request
 import urllib.error
 
 from .base import NormalisedListing, Throttle, detect_garage, parse_int, parse_price
+from .regions import DEFAULT_REGION_KEYS, REGIONS, Region
 
 log = logging.getLogger(__name__)
+
+
+def _as_region(region: Region | str | None) -> Region:
+    """Accept a Region, a region key, or nothing (-> the default district)."""
+    if isinstance(region, Region):
+        return region
+    if isinstance(region, str) and region.strip().lower() in REGIONS:
+        return REGIONS[region.strip().lower()]
+    return REGIONS[DEFAULT_REGION_KEYS[0]]
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -161,8 +171,14 @@ def parse_search_html(html: str) -> list[dict]:
 def scrape_realestate_api(
     price_max: int = 1_000_000,
     max_pages: int = 5,
+    region: Region | str | None = None,
 ) -> list[NormalisedListing]:
     """Scrape realestate.co.nz search results over plain HTTP (no browser).
+
+    ``region`` selects the district to search (see ``scraper.regions``); it defaults to
+    Christchurch so existing callers are unaffected. The same tile markup — and so the
+    same parser — serves every location on the site, which scripts/verify_regions.py
+    checks for all 59 catalogued locations; nothing below this line is Christchurch-specific.
 
     Sorted by ``by=latest`` so each run sees the newest listings first — this is the
     path that keeps the dataset current.
@@ -183,6 +199,7 @@ def scrape_realestate_api(
     The buyer's actual budget is enforced downstream by the hard filters in
     ``scoring.py``, which is where a *preference* belongs — not in data collection.
     """
+    reg = _as_region(region)
     base = "https://www.realestate.co.nz"
     results: list[NormalisedListing] = []
     seen_ids: set[str] = set()
@@ -190,18 +207,15 @@ def scrape_realestate_api(
 
     for page_no in range(1, max_pages + 1):
         throttle.wait()
-        url = (
-            f"{base}/residential/sale/canterbury/christchurch-city"
-            f"?by=latest&page={page_no}"
-        )
+        url = f"{base}/residential/sale/{reg.path}?by=latest&page={page_no}"
         html = _fetch(url)
         if not html:
-            log.warning("realestate.co.nz: page %d fetch failed", page_no)
+            log.warning("realestate.co.nz/%s: page %d fetch failed", reg.key, page_no)
             break
 
         items = parse_search_html(html)
         if not items:
-            log.info("realestate.co.nz: no tiles on page %d; stopping", page_no)
+            log.info("realestate.co.nz/%s: no tiles on page %d; stopping", reg.key, page_no)
             break
 
         new_on_page = 0
@@ -235,6 +249,8 @@ def scrape_realestate_api(
                 url=f"{base}{item['href']}",
                 address=address,
                 suburb=suburb,
+                region=reg.key,
+                region_name=reg.label,
                 price=price,
                 price_text=price_text,
                 bedrooms=_leading_int(item.get("bedrooms") or ""),
@@ -248,11 +264,11 @@ def scrape_realestate_api(
             new_on_page += 1
 
         log.info(
-            "realestate.co.nz: page %d -> %d tiles, %d kept",
-            page_no, len(items), new_on_page,
+            "realestate.co.nz/%s: page %d -> %d tiles, %d kept",
+            reg.key, page_no, len(items), new_on_page,
         )
 
-    log.info("realestate.co.nz total: %d listings", len(results))
+    log.info("realestate.co.nz/%s total: %d listings", reg.key, len(results))
     return results
 
 
@@ -269,6 +285,7 @@ def _suburb_from_address(address: str | None) -> str | None:
 def scrape_trademe_rss(
     price_max: int = 500_000,
     max_pages: int = 1,  # accepted for a uniform scraper signature; TradeMe is single-page
+    region: Region | str | None = None,
 ) -> list[NormalisedListing]:
     """Try TradeMe's property search via their public pages.
 
@@ -276,10 +293,11 @@ def scrape_trademe_rss(
     sometimes include structured data (JSON-LD) that we can parse without
     a browser. This is a best-effort approach.
     """
+    reg = _as_region(region)
     results: list[NormalisedListing] = []
     url = (
-        "https://www.trademe.co.nz/a/property/residential/sale/canterbury"
-        f"/christchurch-city/search?price_max={price_max}&sort_order=expirydesc"
+        f"https://www.trademe.co.nz/a/property/residential/sale/{reg.path}"
+        f"/search?price_max={price_max}&sort_order=expirydesc"
     )
 
     html = _fetch(url)
@@ -307,6 +325,8 @@ def scrape_trademe_rss(
                             url=url_str,
                             address=name,
                             suburb=_suburb_from_address(name),
+                            region=reg.key,
+                            region_name=reg.label,
                             price=price_val,
                             price_text=offers.get("priceCurrency", "NZD") + f" {price_val}" if price_val else None,
                             property_type="house",
@@ -331,6 +351,8 @@ def scrape_trademe_rss(
                         url=f"https://www.trademe.co.nz/a/property/{item.get('listingId', '')}",
                         address=address,
                         suburb=item.get("suburb") or _suburb_from_address(address),
+                        region=reg.key,
+                        region_name=reg.label,
                         price=item.get("priceAmount") or parse_price(item.get("priceDisplay")),
                         price_text=item.get("priceDisplay"),
                         bedrooms=item.get("bedrooms"),

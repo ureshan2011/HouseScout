@@ -52,9 +52,13 @@ jobs:
           for l in listings:
               assert "data_quality" in l, "provenance annotation missing"
               assert l.get("price_estimate"), f"no price estimate for {l.get('address')}"
+              # Without the district tag the frontend's region filter has nothing to
+              # filter on, and the failure is invisible — the listings look fine.
+              assert l.get("region"), f"no district on {l.get('address')}"
           if not listings:
               print("WARNING: scrape returned nothing (source may be blocking CI)")
-          print(f"OK: {len(listings)} listings, model n_train={model['n_train']}")
+          districts = sorted({l["region"] for l in listings})
+          print(f"OK: {len(listings)} listings from {districts}, model n_train={model['n_train']}")
           EOF
 
   frontend:

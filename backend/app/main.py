@@ -40,4 +40,8 @@ app.include_router(meta.router)
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "version": "0.1.0", "district": settings.scrape_district}
+    return {
+        "status": "ok",
+        "version": "0.1.0",
+        "districts": [r.key for r in settings.regions],
+    }

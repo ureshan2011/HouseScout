@@ -60,10 +60,24 @@ def richness(l: dict) -> int:
     return score
 
 
+def dedupe_key(l: dict) -> str:
+    """Identity of a listing for deduplication, scoped by district.
+
+    Street names repeat across the country and `norm_address` strips street-type
+    words, so an unscoped key would collapse two different properties in two
+    different districts into one. Kept in step with scripts/merge_listings.py.
+    """
+    addr = norm_address(l.get("address"))
+    region = (l.get("region") or "").strip().lower()
+    if addr:
+        return f"{region}|{addr}" if region else addr
+    return f"{l.get('source')}:{l.get('source_id')}"
+
+
 def dedupe_and_number(listings: list[dict]) -> list[dict]:
     best: dict[str, dict] = {}
     for l in listings:
-        key = norm_address(l.get("address")) or f"{l.get('source')}:{l.get('source_id')}"
+        key = dedupe_key(l)
         if key not in best or richness(l) > richness(best[key]):
             best[key] = l
     merged = list(best.values())
@@ -74,10 +88,10 @@ def dedupe_and_number(listings: list[dict]) -> list[dict]:
 
 
 def suburb_from_address(address: str | None) -> str | None:
-    if not address:
-        return None
-    parts = [p.strip() for p in address.split(",") if p.strip()]
-    return parts[-1] if len(parts) >= 1 else None
+    """Delegates to the one shared implementation (scraper/base.py)."""
+    from scraper.base import suburb_from_address as _impl
+
+    return _impl(address)
 
 
 def fetch_url(url: str, timeout: int = 30) -> str | None:
@@ -110,41 +124,53 @@ def load_partials() -> list[dict]:
 
 
 def run_api_scrapers() -> list[dict]:
-    """Fetch current listings over plain HTTP (no browser).
+    """Fetch current listings over plain HTTP (no browser), across every selected district.
 
     This is the path that keeps the dataset fresh. It was previously dead code:
     `scraper/api_scrapers.py` defined the scrapers but nothing ever imported them, so
     every build re-emitted the same hardcoded seed list no matter how often the cron
     fired.
 
-    Failure is non-fatal, but there is no longer a fabricated fallback behind it — a
-    blocked source now means fewer (or zero) listings, not invented ones.
+    Coverage comes from ``SCRAPE_REGIONS`` (see scraper/regions.py) rather than a
+    hardcoded city, so widening the search from Christchurch to, say, the whole South
+    Island is a workflow input instead of a code change.
+
+    Each (source, district) pair is one task, run concurrently but capped: the per-
+    scraper ``Throttle`` only paces requests *within* a task, so the worker count is
+    what actually bounds how hard we hit any one site. Failure is non-fatal, and there
+    is no fabricated fallback behind it — a blocked source means fewer (or zero)
+    listings, not invented ones.
     """
     try:
         from scraper.api_scrapers import ALL_API_SCRAPERS
+        from scraper.regions import regions_from_env
     except Exception as exc:  # noqa: BLE001
         print(f"  ! could not import API scrapers ({exc})")
         return []
 
     price_max = int(os.environ.get("SCRAPE_PRICE_CEILING", "1000000"))
     max_pages = int(os.environ.get("SCRAPE_MAX_PAGES", "12"))
+    workers = max(1, int(os.environ.get("SCRAPE_CONCURRENCY", "4")))
+    regions = regions_from_env()
+    print(f"  districts: {', '.join(r.key for r in regions)}")
 
+    jobs = [(name, fn, reg) for name, fn in ALL_API_SCRAPERS.items() for reg in regions]
     out: list[dict] = []
-    with ThreadPoolExecutor(max_workers=len(ALL_API_SCRAPERS) or 1) as pool:
+    with ThreadPoolExecutor(max_workers=min(workers, len(jobs) or 1)) as pool:
         futures = {
-            pool.submit(fn, price_max=price_max, max_pages=max_pages): name
-            for name, fn in ALL_API_SCRAPERS.items()
+            pool.submit(fn, price_max=price_max, max_pages=max_pages, region=reg): (name, reg)
+            for name, fn, reg in jobs
         }
         for future in as_completed(futures):
-            name = futures[future]
+            name, reg = futures[future]
             try:
                 items = future.result()
             except Exception as exc:  # noqa: BLE001
-                print(f"  ! {name}: failed ({exc})")
+                print(f"  ! {name}/{reg.key}: failed ({exc})")
                 continue
             mapped = [_from_normalised(it) for it in items if it.address]
             out.extend(mapped)
-            print(f"  -> {name}: {len(mapped)} listings")
+            print(f"  -> {name}/{reg.key}: {len(mapped)} listings")
     return out
 
 
@@ -158,7 +184,9 @@ def _from_normalised(item) -> dict:
         "source_id": d.get("source_id"),
         "url": d.get("url"),
         "address": d.get("address"),
-        "suburb": d.get("suburb"),
+        "suburb": d.get("suburb") or suburb_from_address(d.get("address")),
+        "region": d.get("region"),
+        "region_name": d.get("region_name"),
         "lat": d.get("lat"),
         "lng": d.get("lng"),
         # None when the listing publishes no figure (auction / deadline / POA). Left
@@ -218,6 +246,10 @@ def main() -> None:
         return
     print(f"\nWrote {len(final)} unique listings to {OUT_JSON.name}")
     print(f"  Sources: {', '.join(sorted(set(l.get('source','?') for l in final)))}")
+    by_region: dict[str, int] = {}
+    for l in final:
+        by_region[l.get("region") or "?"] = by_region.get(l.get("region") or "?", 0) + 1
+    print(f"  Districts: {', '.join(f'{k} ({v})' for k, v in sorted(by_region.items()))}")
     print(f"  Suburbs: {', '.join(sorted(set(l.get('suburb','?') for l in final if l.get('suburb'))))}")
     prices = [l["price"] for l in final if l.get("price")]
     if prices:

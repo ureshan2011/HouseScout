@@ -6,9 +6,10 @@
 // The public surface (types, `api`, `fmt`) is unchanged so the pages/components
 // keep working as-is.
 
-import { DEFAULTS, RATES, SUBURBS, RawListing, Provenance, DataQuality } from "./data";
+import { RATES, SUBURBS, RawListing, Provenance, DataQuality } from "./data";
 import { analyse, FinanceResult, Scenario } from "./finance";
 import { defaultCriteria, scoreListing } from "./scoring";
+import { loadProfile, profileSignature } from "./criteria";
 import * as ai from "./ai";
 
 const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
@@ -33,6 +34,10 @@ export type Listing = {
   url?: string | null;
   address?: string | null;
   suburb?: string | null;
+  /** District key from scraper/regions.py, e.g. "christchurch-city". */
+  region?: string | null;
+  /** Display label for that district, e.g. "Christchurch, Canterbury". */
+  region_name?: string | null;
   lat?: number | null;
   lng?: number | null;
   price?: number | null;
@@ -67,7 +72,13 @@ type DataSet = {
   rawById: Map<number, RawListing>;
 };
 
-let dataPromise: Promise<DataSet> | null = null;
+// Two caches, deliberately separate. The listings file is fetched once per page load;
+// the *scored* view is rebuilt whenever the buyer's profile changes, because every
+// score and every pass/fail depends on it. Keying the scored cache on the profile
+// signature means editing the budget in Settings re-ranks the site immediately
+// instead of serving results computed against the old criteria.
+let rawPromise: Promise<RawListing[]> | null = null;
+let scoredCache: { signature: string; data: DataSet } | null = null;
 
 function assetUrl(path: string): string {
   if (/^https?:\/\//.test(path)) return path;
@@ -85,10 +96,14 @@ async function fetchRawListings(): Promise<RawListing[]> {
   }
 }
 
-function loadData(): Promise<DataSet> {
-  if (dataPromise) return dataPromise;
-  dataPromise = (async () => {
-    const raw = await fetchRawListings();
+async function loadData(): Promise<DataSet> {
+  const signature = profileSignature();
+  if (scoredCache && scoredCache.signature === signature) return scoredCache.data;
+
+  if (!rawPromise) rawPromise = fetchRawListings();
+  const raw = await rawPromise;
+
+  const build = (): DataSet => {
     const c = defaultCriteria();
     const scored: Listing[] = raw.map((r) => {
       const s = scoreListing(r, c);
@@ -98,6 +113,8 @@ function loadData(): Promise<DataSet> {
         url: r.url,
         address: r.address,
         suburb: r.suburb,
+        region: r.region,
+        region_name: r.region_name,
         lat: r.lat,
         lng: r.lng,
         price: r.price,
@@ -130,8 +147,11 @@ function loadData(): Promise<DataSet> {
       byId: new Map(scored.map((l) => [l.id, l])),
       rawById: new Map(raw.map((l) => [l.id, l])),
     };
-  })();
-  return dataPromise;
+  };
+
+  const data = build();
+  scoredCache = { signature, data };
+  return data;
 }
 
 function num(v: string | null): number | undefined {
@@ -140,36 +160,100 @@ function num(v: string | null): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-function filterAndSort(d: DataSet, qs: string): Listing[] {
+/** Comma-separated multi-select param -> lowercased set, or null when absent. */
+function multi(raw: string | null): Set<string> | null {
+  if (!raw) return null;
+  const values = raw
+    .split(",")
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean);
+  return values.length ? new Set(values) : null;
+}
+
+/**
+ * Filter + sort the scored listings.
+ *
+ * Every criterion here is a query parameter rather than a constant, and the Listings
+ * page mirrors them into the URL, so a search is shareable and survives a reload.
+ * Unrecognised parameters are ignored, and an absent parameter never filters.
+ *
+ * Supported: region, suburb, property_type (multi), min_price, max_price,
+ * min_bedrooms, max_bedrooms, min_bathrooms, min_land, max_land, garage_only,
+ * priced_only, q, passes_only, sort, limit, offset.
+ */
+function applyFilters(d: DataSet, qs: string): Listing[] {
   const p = new URLSearchParams(qs.replace(/^\?/, ""));
-  const suburb = p.get("suburb");
-  const propertyType = p.get("property_type");
+  const regions = multi(p.get("region"));
+  const suburbs = multi(p.get("suburb"));
+  const propertyTypes = multi(p.get("property_type"));
+  const minPrice = num(p.get("min_price"));
   const maxPrice = num(p.get("max_price"));
   const minBedrooms = num(p.get("min_bedrooms"));
+  const maxBedrooms = num(p.get("max_bedrooms"));
+  const minBathrooms = num(p.get("min_bathrooms"));
+  const minLand = num(p.get("min_land"));
+  const maxLand = num(p.get("max_land"));
   const garageOnly = p.get("garage_only") === "true";
+  // "Only listings with a published asking price" — i.e. hide the ones where the
+  // headline figure is our model's estimate. Most NZ stock sells by auction or
+  // deadline sale, so this is a meaningful distinction, not a cosmetic one.
+  const pricedOnly = p.get("priced_only") === "true";
+  const q = (p.get("q") || "").trim().toLowerCase();
   const passesOnly = p.get("passes_only") !== "false"; // default true (backend default)
   const sort = p.get("sort") || "score";
-  const limit = Math.min(num(p.get("limit")) ?? 60, 200);
-  const offset = num(p.get("offset")) ?? 0;
+
+  // The figure to reason about: published where there is one, else the model's
+  // estimate. Filtering on `price` alone would drop the 80%+ of listings that publish
+  // none, which is exactly the stock this buyer is shopping in.
+  const workingPrice = (l: Listing) => l.price ?? l.price_estimate ?? null;
+  const land = (l: Listing) => l.enrichment?.land_area_m2 ?? l.land_area_m2 ?? null;
 
   let rows = d.scored.slice();
-  if (suburb) rows = rows.filter((l) => l.suburb === suburb);
-  if (propertyType) rows = rows.filter((l) => l.property_type === propertyType);
+  if (regions) rows = rows.filter((l) => regions.has((l.region || "").toLowerCase()));
+  if (suburbs) rows = rows.filter((l) => suburbs.has((l.suburb || "").toLowerCase()));
+  if (propertyTypes)
+    rows = rows.filter((l) => propertyTypes.has((l.property_type || "").toLowerCase()));
+  if (minPrice != null)
+    rows = rows.filter((l) => {
+      const v = workingPrice(l);
+      return v != null && v >= minPrice;
+    });
   if (maxPrice != null)
     rows = rows.filter((l) => {
-      const p = l.price ?? l.price_estimate;
-      return p != null && p <= maxPrice;
+      const v = workingPrice(l);
+      return v != null && v <= maxPrice;
     });
   if (minBedrooms != null) rows = rows.filter((l) => (l.bedrooms ?? 0) >= minBedrooms);
+  if (maxBedrooms != null) rows = rows.filter((l) => (l.bedrooms ?? 0) <= maxBedrooms);
+  if (minBathrooms != null) rows = rows.filter((l) => (l.bathrooms ?? 0) >= minBathrooms);
+  // A land filter only excludes listings whose land area is *known* to miss it —
+  // an unknown land area is not evidence of a small section, and dropping those
+  // rows would hide most apartments-excluded stock for no reason.
+  if (minLand != null)
+    rows = rows.filter((l) => {
+      const v = land(l);
+      return v == null || v >= minLand;
+    });
+  if (maxLand != null)
+    rows = rows.filter((l) => {
+      const v = land(l);
+      return v == null || v <= maxLand;
+    });
   if (garageOnly) rows = rows.filter((l) => l.has_garage);
+  if (pricedOnly) rows = rows.filter((l) => l.price != null);
+  if (q) {
+    rows = rows.filter((l) =>
+      [l.address, l.suburb, l.region_name, l.description, l.property_type]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(q),
+    );
+  }
   if (passesOnly) rows = rows.filter((l) => l.score?.passes_filters);
 
   const score = (l: Listing) => l.score?.match_score ?? -Infinity;
   const days = (l: Listing) => d.rawById.get(l.id)?.days_on_market ?? Infinity;
-
-  // Sorting and filtering by price must use the working figure, or the 80%+ of
-  // listings that publish no price would sort as if they were free.
-  const workingPrice = (l: Listing) => l.price ?? l.price_estimate ?? null;
 
   if (sort === "score") rows.sort((a, b) => score(b) - score(a));
   else if (sort === "price")
@@ -177,22 +261,85 @@ function filterAndSort(d: DataSet, qs: string): Listing[] {
   else if (sort === "price_desc")
     rows.sort((a, b) => (workingPrice(b) ?? -Infinity) - (workingPrice(a) ?? -Infinity));
   else if (sort === "newest") rows.sort((a, b) => days(a) - days(b)); // fewer days = newer
+  else if (sort === "land")
+    rows.sort((a, b) => (land(b) ?? -Infinity) - (land(a) ?? -Infinity));
+  else if (sort === "bedrooms") rows.sort((a, b) => (b.bedrooms ?? 0) - (a.bedrooms ?? 0));
 
-  return rows.slice(offset, offset + limit);
+  return rows;
+}
+
+/** Filtered, sorted and paged — what the Listings page renders. */
+function filterAndSort(d: DataSet, qs: string): Listing[] {
+  const p = new URLSearchParams(qs.replace(/^\?/, ""));
+  const limit = Math.min(num(p.get("limit")) ?? 60, 200);
+  const offset = num(p.get("offset")) ?? 0;
+  return applyFilters(d, qs).slice(offset, offset + limit);
+}
+
+export type Facet = { value: string; label: string; count: number };
+
+/**
+ * The filter options actually present in the data, with counts.
+ *
+ * Derived from the listings rather than from a static list so the menus can never
+ * offer a district or suburb that this build did not scrape — which matters now that
+ * coverage is configurable per deploy.
+ *
+ * An optional query scopes the counts: the Listings page passes the selected
+ * districts when building the suburb menu, so picking Dunedin narrows the suburb
+ * chips to Dunedin's suburbs instead of listing every suburb in the country.
+ */
+function facetsOf(d: DataSet, qs = "") {
+  const rows = qs ? applyFilters(d, qs) : d.scored;
+  const tally = (
+    pick: (l: Listing) => string | null | undefined,
+    label: (l: Listing) => string | null | undefined,
+  ): Facet[] => {
+    const counts = new Map<string, { label: string; count: number }>();
+    for (const l of rows) {
+      const value = (pick(l) || "").trim();
+      if (!value) continue;
+      const existing = counts.get(value);
+      if (existing) existing.count += 1;
+      else counts.set(value, { label: (label(l) || value).trim(), count: 1 });
+    }
+    return [...counts.entries()]
+      .map(([value, v]) => ({ value, label: v.label, count: v.count }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  };
+
+  return {
+    regions: tally(
+      (l) => l.region,
+      (l) => l.region_name,
+    ),
+    suburbs: tally(
+      (l) => l.suburb,
+      (l) => l.suburb,
+    ),
+    propertyTypes: tally(
+      (l) => l.property_type,
+      (l) => l.property_type,
+    ),
+  };
 }
 
 function scenarioFor(d: DataSet, id: number, qs: string): Finance {
   const l = d.byId.get(id);
   const p = new URLSearchParams(qs.replace(/^\?/, ""));
+  // Query string wins, then the buyer's saved profile, then the factory defaults —
+  // so a deposit or rate changed in Settings flows through every listing's finance
+  // panel without the caller having to pass it.
+  const prof = loadProfile();
   const s: Scenario = {
     // Mortgage maths needs a figure; fall back to the model's estimate, then to
     // the pre-approval ceiling.
-    price: l?.price ?? l?.price_estimate ?? DEFAULTS.preapproval,
-    deposit: num(p.get("deposit")) ?? DEFAULTS.deposit,
-    annual_rate: num(p.get("annual_rate")) ?? DEFAULTS.annual_rate,
-    term_years: num(p.get("term_years")) ?? DEFAULTS.term_years,
+    price: l?.price ?? l?.price_estimate ?? prof.preapproval,
+    deposit: num(p.get("deposit")) ?? prof.deposit,
+    annual_rate: num(p.get("annual_rate")) ?? prof.annual_rate,
+    term_years: num(p.get("term_years")) ?? prof.term_years,
     bedrooms: l?.bedrooms ?? null,
-    weekly_rent: num(p.get("weekly_rent")) ?? DEFAULTS.weekly_rent,
+    weekly_rent: num(p.get("weekly_rent")) ?? prof.weekly_rent,
     occupancy: num(p.get("occupancy")) ?? 1.0,
     reinvest_boarder_income: p.get("reinvest") !== "false",
   };
@@ -234,18 +381,33 @@ export const api = {
   listing: async (id: number) => (await loadData()).byId.get(id) as Listing,
 
   financeForListing: async (id: number, qs = "") => scenarioFor(await loadData(), id, qs),
-  scenario: async (body: any) =>
-    analyse({
+  scenario: async (body: any) => {
+    const prof = loadProfile();
+    return analyse({
       price: body.price,
-      deposit: body.deposit ?? DEFAULTS.deposit,
-      annual_rate: body.annual_rate ?? DEFAULTS.annual_rate,
-      term_years: body.term_years ?? DEFAULTS.term_years,
+      deposit: body.deposit ?? prof.deposit,
+      annual_rate: body.annual_rate ?? prof.annual_rate,
+      term_years: body.term_years ?? prof.term_years,
       bedrooms: body.bedrooms,
-      weekly_rent: body.weekly_rent ?? DEFAULTS.weekly_rent,
+      weekly_rent: body.weekly_rent ?? prof.weekly_rent,
       occupancy: body.occupancy ?? 1.0,
       reinvest_boarder_income: body.reinvest_boarder_income ?? true,
-    }),
-  financeDefaults: async () => ({ ...DEFAULTS }),
+    });
+  },
+  financeDefaults: async () => {
+    const p = loadProfile();
+    return {
+      max_price: p.max_price,
+      preapproval: p.preapproval,
+      deposit: p.deposit,
+      annual_rate: p.annual_rate,
+      term_years: p.term_years,
+      weekly_rent: p.weekly_rent,
+    };
+  },
+
+  /** Filter options present in this build's data, with counts. Optionally scoped. */
+  facets: async (qs = "") => facetsOf(await loadData(), qs),
 
   // --- Analysis (all local: baked insights + the in-browser reasoning engine) ---
   engine: async () => ({ name: ai.ENGINE_NAME, local: true }),

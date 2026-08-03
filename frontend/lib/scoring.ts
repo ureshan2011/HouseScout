@@ -6,6 +6,7 @@
 //   * Rentability (rooms for boarders) is heavily weighted (pay the loan off fast).
 
 import { rentableRooms } from "./finance";
+import { loadProfile } from "./criteria";
 
 export type Criteria = {
   max_price: number;
@@ -16,14 +17,22 @@ export type Criteria = {
   allow_townhouse: boolean;
 };
 
-export const defaultCriteria = (): Criteria => ({
-  max_price: 500_000,
-  preapproval: 480_000,
-  require_garage: true,
-  require_backyard: true,
-  min_backyard_m2: 50.0, // "at least a tiny backyard"
-  allow_townhouse: true,
-});
+/**
+ * The buyer's current criteria. These were literals here until the profile became
+ * editable — see lib/criteria.ts, which still carries the same values as
+ * FACTORY_DEFAULTS so an untouched browser scores identically.
+ */
+export const defaultCriteria = (): Criteria => {
+  const p = loadProfile();
+  return {
+    max_price: p.max_price,
+    preapproval: p.preapproval,
+    require_garage: p.require_garage,
+    require_backyard: p.require_backyard,
+    min_backyard_m2: p.min_backyard_m2,
+    allow_townhouse: p.allow_townhouse,
+  };
+};
 
 // Component weights (sum = 100). Rentability dominates per the buyer's goal.
 const WEIGHTS: Record<string, number> = {

@@ -36,11 +36,20 @@ class Settings(BaseSettings):
     default_term_years: int = 30
     boarder_weekly_rent: float = 220
 
-    # Scraper
-    scrape_region: str = "canterbury"
-    scrape_district: str = "christchurch-city"
+    # Scraper coverage. A comma-separated selection understood by
+    # scraper.regions.resolve_regions: district keys ("christchurch-city,selwyn"), a
+    # region name ("canterbury"), "island:south", or "all". Replaces the old
+    # scrape_region/scrape_district pair, which could only ever name one district.
+    scrape_regions: str = "christchurch-city"
     scrape_interval_hours: int = 6
     scrape_user_agent: str = "HouseScout/0.1 (personal use)"
+
+    @property
+    def regions(self):
+        """The resolved Region rows this deployment covers."""
+        from scraper.regions import resolve_regions
+
+        return resolve_regions(self.scrape_regions)
 
 
 @lru_cache

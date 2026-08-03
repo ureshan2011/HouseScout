@@ -35,7 +35,8 @@ def upsert_listing(db, item: dict) -> Listing:
         db.add(listing)
 
     for field in (
-        "url", "address", "suburb", "lat", "lng", "price", "price_text", "bedrooms",
+        "url", "address", "suburb", "region", "region_name", "lat", "lng",
+        "price", "price_text", "bedrooms",
         "bathrooms", "car_spaces", "has_garage", "land_area_m2", "floor_area_m2",
         "property_type", "description", "agent", "listing_date",
     ):

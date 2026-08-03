@@ -39,10 +39,25 @@ def richness(l: dict) -> int:
     return score
 
 
+def dedupe_key(l: dict) -> str:
+    """Identity of a listing for deduplication.
+
+    Scoped by district. Street names repeat across the country — there is a Queen
+    Street and a Richmond in several districts — and `norm_address` deliberately
+    strips street-type words, so a nationwide scrape would otherwise collapse two
+    genuinely different properties into one and silently drop a listing.
+    """
+    addr = norm_address(l.get("address"))
+    region = (l.get("region") or "").strip().lower()
+    if addr:
+        return f"{region}|{addr}" if region else addr
+    return f"{l.get('source')}:{l.get('source_id')}"
+
+
 def dedupe_and_number(listings: list[dict]) -> list[dict]:
     best: dict[str, dict] = {}
     for l in listings:
-        key = norm_address(l.get("address")) or f"{l.get('source')}:{l.get('source_id')}"
+        key = dedupe_key(l)
         if key not in best or richness(l) > richness(best[key]):
             best[key] = l
     merged = list(best.values())

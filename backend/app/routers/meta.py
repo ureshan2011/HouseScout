@@ -22,6 +22,30 @@ def rates(db: Session = Depends(get_db)):
     return db.query(MortgageRate).order_by(MortgageRate.rate.asc()).all()
 
 
+@router.get("/regions")
+def regions(db: Session = Depends(get_db)):
+    """The district catalogue, plus which districts this deployment covers and holds.
+
+    `available` is every district the scraper knows how to search; `configured` is the
+    SCRAPE_REGIONS selection; `stored` counts what is actually in the database, which
+    is what a region filter should be built from.
+    """
+    from ..config import settings
+    from scraper.regions import region_choices
+
+    counts = dict(
+        db.query(Listing.region, func.count(Listing.id))
+        .filter(Listing.region.is_not(None))
+        .group_by(Listing.region)
+        .all()
+    )
+    return {
+        "available": region_choices(),
+        "configured": [r.key for r in settings.regions],
+        "stored": [{"key": k, "count": n} for k, n in sorted(counts.items())],
+    }
+
+
 @router.get("/stats")
 def stats(db: Session = Depends(get_db)):
     total = db.scalar(select(func.count(Listing.id))) or 0

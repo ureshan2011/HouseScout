@@ -20,6 +20,7 @@ import random
 from dataclasses import dataclass, field
 
 from .base import NormalisedListing, Throttle, detect_garage, parse_int, parse_price
+from .regions import DEFAULT_REGION_KEYS, REGIONS, Region
 
 log = logging.getLogger(__name__)
 
@@ -52,13 +53,25 @@ _BLOCK_IMG = (
 @dataclass
 class SiteConfig:
     name: str
-    search_url: str  # may use {price_max} and {page}
+    search_url: str  # may use {price_max}, {page} and {location}
     base: str
     card: str  # CSS selector for a result tile
     sel: dict  # field -> list of fallback selectors
     browser: str = "chromium"
     property_type: str = "house"
     detail_limit: int = 18  # open this many detail pages for full galleries
+    # False for a site whose search path no longer resolves. Kept in the catalogue
+    # (the selectors are still the best starting point for repairing it) but skipped
+    # by default so it cannot silently consume a CI runner and return nothing.
+    enabled: bool = True
+
+    def location_for(self, region: Region) -> str:
+        """This site's location path segment for a district.
+
+        realestate.co.nz and TradeMe both use ``<region>/<district>``, which is exactly
+        ``Region.path``. A site with a different scheme overrides this.
+        """
+        return region.path
 
 
 # Best-effort configs. Selectors are isolated here so site HTML changes are a
@@ -67,7 +80,7 @@ SITES: dict[str, SiteConfig] = {
     "realestate.co.nz": SiteConfig(
         name="realestate.co.nz",
         search_url=(
-            "https://www.realestate.co.nz/residential/sale/canterbury/christchurch-city"
+            "https://www.realestate.co.nz/residential/sale/{location}"
             "?price_max={price_max}&by=latest&page={page}"
         ),
         base="https://www.realestate.co.nz",
@@ -86,7 +99,7 @@ SITES: dict[str, SiteConfig] = {
     "trademe.co.nz": SiteConfig(
         name="trademe.co.nz",
         search_url=(
-            "https://www.trademe.co.nz/a/property/residential/sale/canterbury/christchurch-city"
+            "https://www.trademe.co.nz/a/property/residential/sale/{location}"
             "/search?price_max={price_max}&sort_order=expirydesc&page={page}"
         ),
         base="https://www.trademe.co.nz",
@@ -102,10 +115,16 @@ SITES: dict[str, SiteConfig] = {
         },
         browser="firefox",
     ),
+    # DISABLED: the configured search path no longer exists. Probed 2026-08: the site
+    # root returns 200 but `/for-sale/canterbury/christchurch`, `/for-sale/...-city` and
+    # `/for-sale` itself all return 404, so this config has been scraping nothing —
+    # every CI run spent a runner on it and uploaded an empty partial. Re-enable once
+    # someone re-derives the current search URL and confirms the selectors below.
     "oneroof.co.nz": SiteConfig(
         name="oneroof.co.nz",
+        enabled=False,
         search_url=(
-            "https://www.oneroof.co.nz/for-sale/canterbury/christchurch"
+            "https://www.oneroof.co.nz/for-sale/{location}"
             "?maxPrice={price_max}&page={page}"
         ),
         base="https://www.oneroof.co.nz",
@@ -181,7 +200,7 @@ def _collect_house_images(page, limit: int = 6) -> list[str]:
     return out
 
 
-def _parse_card(card, cfg: SiteConfig) -> NormalisedListing | None:
+def _parse_card(card, cfg: SiteConfig, region: Region) -> NormalisedListing | None:
     try:
         href_el = card.query_selector("a[href]")
         href = href_el.get_attribute("href") if href_el else None
@@ -207,6 +226,8 @@ def _parse_card(card, cfg: SiteConfig) -> NormalisedListing | None:
             source_id=source_id,
             url=url,
             address=address,
+            region=region.key,
+            region_name=region.label,
             price=parse_price(price_text),
             price_text=price_text,
             bedrooms=beds,
@@ -229,13 +250,24 @@ def scrape_site(
     price_max: int = 500_000,
     max_pages: int = 4,
     browser_engine: str | None = None,
+    region: Region | str | None = None,
 ) -> list[NormalisedListing]:
-    """Scrape one site with a given browser engine + rotated signature."""
+    """Scrape one site's district with a given browser engine + rotated signature."""
+    if not cfg.enabled:
+        log.warning("%s is disabled (dead search URL); skipping", cfg.name)
+        return []
     try:
         from playwright.sync_api import sync_playwright
     except Exception as exc:  # noqa: BLE001
         log.warning("Playwright unavailable (%s); skipping %s", exc, cfg.name)
         return []
+
+    if isinstance(region, Region):
+        reg = region
+    elif isinstance(region, str) and region.strip().lower() in REGIONS:
+        reg = REGIONS[region.strip().lower()]
+    else:
+        reg = REGIONS[DEFAULT_REGION_KEYS[0]]
 
     engine = browser_engine or cfg.browser
     ua = _ua(engine)
@@ -263,7 +295,9 @@ def scrape_site(
 
             for page_no in range(1, max_pages + 1):
                 throttle.wait()
-                url = cfg.search_url.format(price_max=price_max, page=page_no)
+                url = cfg.search_url.format(
+                    price_max=price_max, page=page_no, location=cfg.location_for(reg)
+                )
                 try:
                     page.goto(url, timeout=45_000, wait_until="domcontentloaded")
                     page.wait_for_timeout(2000)
@@ -277,7 +311,7 @@ def scrape_site(
                     log.info("%s: no cards on page %d (blocked or selector drift)", cfg.name, page_no)
                     break
                 for card in cards:
-                    item = _parse_card(card, cfg)
+                    item = _parse_card(card, cfg, reg)
                     if item and item.address:
                         results.append(item)
 
@@ -301,5 +335,5 @@ def scrape_site(
     except Exception as exc:  # noqa: BLE001
         log.warning("%s scrape error: %s", cfg.name, exc)
 
-    log.info("%s: %d listings (engine=%s)", cfg.name, len(results), engine)
+    log.info("%s/%s: %d listings (engine=%s)", cfg.name, reg.key, len(results), engine)
     return results

@@ -41,10 +41,17 @@ def slugify(s: str) -> str:
 
 
 def suburb_from_address(address: str | None) -> str | None:
-    if not address:
-        return None
-    parts = [p.strip() for p in address.split(",") if p.strip()]
-    return parts[-2] if len(parts) >= 2 else None
+    """The suburb is the last comma-separated part, not the second-to-last.
+
+    This function used to return ``parts[-2]``, i.e. the *street*, so "571 Madras
+    Street, Saint Albans" was filed under the suburb "571 Madras Street". 18 of the
+    157 listings on the live site carry a street name as their suburb because of it,
+    which breaks the suburb filter and makes the valuation model fall back to the city
+    median for every affected row. Shared implementation lives in scraper/base.py.
+    """
+    from scraper.base import suburb_from_address as _impl
+
+    return _impl(address)
 
 
 def _check_house_image(data: bytes) -> bool:
@@ -103,6 +110,8 @@ def map_listing(it, slug: str, seq: int, referer: str) -> dict:
         "url": d.get("url"),
         "address": d.get("address"),
         "suburb": d.get("suburb") or suburb_from_address(d.get("address")),
+        "region": d.get("region"),
+        "region_name": d.get("region_name"),
         "lat": d.get("lat"),
         "lng": d.get("lng"),
         "price": d.get("price"),
@@ -127,22 +136,42 @@ def map_listing(it, slug: str, seq: int, referer: str) -> dict:
 
 
 def scrape_source(name: str) -> list[dict]:
+    """Scrape one source across every district selected by SCRAPE_REGIONS."""
+    from scraper.regions import regions_from_env
     from scraper.sites import SITES, scrape_site
 
     cfg = SITES.get(name)
     if not cfg:
         print(f"! unknown source '{name}'; known: {', '.join(SITES)}")
         return []
-    slug = slugify(name)
-    try:
-        items = scrape_site(cfg, price_max=PRICE_MAX, max_pages=MAX_PAGES, browser_engine=BROWSER)
-    except Exception as exc:  # noqa: BLE001
-        print(f"! {name} scrape failed: {exc}")
+    if not cfg.enabled:
+        print(f"! {name} is disabled in scraper/sites.py (dead search URL); nothing to do")
         return []
-    out = []
-    for i, it in enumerate(items, start=1):
-        if it.address:
-            out.append(map_listing(it, slug, i, cfg.base))
+
+    slug = slugify(name)
+    out: list[dict] = []
+    seq = 0
+    for reg in regions_from_env():
+        try:
+            items = scrape_site(
+                cfg,
+                price_max=PRICE_MAX,
+                max_pages=MAX_PAGES,
+                browser_engine=BROWSER,
+                region=reg,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"! {name}/{reg.key} scrape failed: {exc}")
+            continue
+        kept = 0
+        for it in items:
+            if not it.address:
+                continue
+            seq += 1
+            out.append(map_listing(it, slug, seq, cfg.base))
+            kept += 1
+        print(f"  {name}/{reg.key}: {kept} listings")
+
     print(f"{name}: kept {len(out)} listings ({sum(len(o['images']) for o in out)} photos)")
     return out
 
@@ -166,8 +195,9 @@ def main() -> None:
     from merge_listings import dedupe_and_number  # type: ignore
 
     all_listings: list[dict] = []
-    for name in SITES:
-        all_listings.extend(scrape_source(name))
+    for name, cfg in SITES.items():
+        if cfg.enabled:
+            all_listings.extend(scrape_source(name))
     final = dedupe_and_number(all_listings)
     (PUBLIC_DIR / "listings.json").write_text(json.dumps(final, indent=2) + "\n")
     print(f"Wrote {len(final)} merged listings to listings.json")

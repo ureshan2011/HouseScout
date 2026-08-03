@@ -36,6 +36,10 @@ export type RawListing = {
   url: string;
   address: string;
   suburb: string;
+  /** District key from scraper/regions.py, e.g. "christchurch-city". */
+  region?: string | null;
+  /** Display label for that district, e.g. "Christchurch, Canterbury". */
+  region_name?: string | null;
   lat: number;
   lng: number;
   /** Null when the listing publishes no figure (auction / deadline / POA). */
@@ -76,15 +80,9 @@ export type Suburb = {
 
 export type MortgageRate = { bank: string; term_label: string; rate: number };
 
-// Buyer profile defaults (ported from backend/app/config.py).
-export const DEFAULTS = {
-  max_price: 500_000,
-  preapproval: 480_000,
-  deposit: 50_000,
-  annual_rate: 0.0519,
-  term_years: 30,
-  weekly_rent: 220,
-};
+// The buyer profile moved to lib/criteria.ts, where it is editable and persisted
+// per-browser. Its FACTORY_DEFAULTS hold the values that used to live here.
+export { FACTORY_DEFAULTS as DEFAULTS } from "./criteria";
 
 // Affordable Christchurch suburbs (illustrative figures, June 2026).
 export const SUBURBS: Suburb[] = [

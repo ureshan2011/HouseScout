@@ -1,8 +1,13 @@
-# 🏠 HouseScout — Christchurch House-Buying Intelligence
+# 🏠 HouseScout — NZ House-Buying Intelligence
 
-A platform to find, analyse and finance a first home in **Christchurch, NZ**, built around one
-strategy: **buy under $500k with a garage + backyard, live in it, rent the spare rooms to boarders,
-and pay the mortgage off as fast as possible.**
+A platform to find, analyse and finance a first home anywhere in **New Zealand**, built around one
+strategy: **buy under your cap with a garage + backyard, live in it, rent the spare rooms to
+boarders, and pay the mortgage off as fast as possible.**
+
+Coverage and criteria are both **configuration, not code**: pick any of the 59 verified locations in
+[`scraper/regions.py`](scraper/regions.py) via `SCRAPE_REGIONS`, and set your budget, deposit, rate
+and hard filters on the app's **Settings** page. The defaults are a $500k Christchurch buyer, which
+is where the project started.
 
 It scrapes listings, self-hosts their photos, enriches them with free official **LINZ** land data,
 ranks them against your criteria, runs full **mortgage + boarder-income + accelerated-payoff**
@@ -19,9 +24,9 @@ coefficient or a listing field you can inspect.
 
 ## ⚠️ Read this before trusting a price
 
-Most Christchurch stock under $500k sells by **auction or deadline sale and publishes no price at
-all**. For those listings the price you see is **HouseScout's own estimate**, labelled `Est. price`
-in the UI. Roughly 85% of a typical build falls into this category.
+Most NZ stock in the affordable brackets sells by **auction or deadline sale and publishes no price
+at all**. For those listings the price you see is **HouseScout's own estimate**, labelled
+`Est. price` in the UI. Roughly 85% of a typical build falls into this category.
 
 The app is built around that constraint rather than hiding it:
 
@@ -62,7 +67,7 @@ Key modules added since v1:
 
 | Mode | What runs | Data | Analysis |
 |------|-----------|------|----------|
-| **Static web app** (GitHub Pages) | Just the frontend, entirely in the browser | Christchurch listings scraped at build time (keyless, parallel), photos self-hosted, scored in the browser | In-browser: valuation model + baked written analysis |
+| **Static web app** (GitHub Pages) | Just the frontend, entirely in the browser | Listings for the configured districts scraped at build time (keyless, parallel), photos self-hosted, scored in the browser | In-browser: valuation model + baked written analysis |
 | **Full stack** (local/24-7) | FastAPI + SQLite + scheduler + Playwright scraper | Live scraped + LINZ-enriched listings in a database | In-process (`backend/app/analysis.py`) |
 
 Both modes use the same deterministic engines — there is nothing external to install or
@@ -108,28 +113,85 @@ A typical run pulls ~100 live listings across 50+ suburbs.
 
 The deploy workflow additionally runs Playwright scrapers **in parallel** and merges them:
 
-- **Parallel agents:** a CI matrix runs one job per source (`realestate.co.nz`, `trademe.co.nz`,
-  `oneroof.co.nz`), each on its **own runner** (different IP) with a **different browser engine**
-  (Chromium / Firefox) and a rotated, realistic browser signature (user-agent, viewport, locale,
-  timezone, light stealth tweaks) to reduce blocking.
+- **Parallel agents:** a CI matrix runs one job per source (`realestate.co.nz`, `trademe.co.nz`),
+  each on its **own runner** (different IP) with a **different browser engine** (Chromium /
+  Firefox) and a rotated, realistic browser signature (user-agent, viewport, locale, timezone,
+  light stealth tweaks) to reduce blocking. `oneroof.co.nz` is present but **disabled**: its search
+  URL 404s, so the job was uploading empty partials every run.
 - **Merge + dedupe:** `scripts/merge_listings.py` combines the partials, dedupes by normalised
-  address (keeping the richest record), assigns ids, and writes `frontend/public/listings.json`.
+  address **scoped to the district** (keeping the richest record), assigns ids, and writes
+  `frontend/public/listings.json`. The scoping matters once coverage is national: address
+  normalisation strips street-type words, so "12 Queen Street, Richmond" in Nelson and "12 Queen
+  Road, Richmond" in Christchurch would otherwise collapse into one listing.
 - **House photos only:** images are downloaded and self-hosted; agent/human headshots and logos
   are filtered out by URL keywords and image dimensions (Pillow), keeping landscape property
   photos.
 - **Every 6 hours:** a `cron` schedule refreshes the data (plus on every push to `main`).
 
 Sources & engines are configured in `scraper/sites.py`. Tunables via env:
-`SCRAPE_PRICE_CEILING` (1000000), `SCRAPE_MAX_PAGES` (8), `SCRAPE_PRICE_MAX` (500000, Playwright
-path). Run the HTTP scrapers with `python scripts/build_listings.py`, the browser scrapers with
-`python scripts/scrape_listings.py` (or one via `SCRAPE_SOURCE=trademe.co.nz`).
+`SCRAPE_REGIONS` (see below), `SCRAPE_PRICE_CEILING` (1000000), `SCRAPE_MAX_PAGES` (12),
+`SCRAPE_CONCURRENCY` (4), `SCRAPE_PRICE_MAX` (500000, Playwright path). Run the HTTP scrapers with
+`python scripts/build_listings.py`, the browser scrapers with `python scripts/scrape_listings.py`
+(or one via `SCRAPE_SOURCE=trademe.co.nz`).
 
-**Why ingestion reaches above $500k.** In the sub-$500k Christchurch segment essentially nothing
+### 🗺️ Choosing which districts to cover
+
+Coverage is data, not source code. [`scraper/regions.py`](scraper/regions.py) catalogues **59 NZ
+locations**, and `SCRAPE_REGIONS` selects from it:
+
+| Value | Covers |
+|---|---|
+| *(unset)* | Christchurch — the project default |
+| `dunedin-city` | one district |
+| `christchurch-city,selwyn,waimakariri` | several |
+| `canterbury` | every district in a region |
+| `island:south` | every district in an island |
+| `all` | the whole country (59 locations) |
+
+```bash
+SCRAPE_REGIONS=island:south python scripts/build_listings.py
+```
+
+Unknown tokens are skipped rather than fatal, so a typo narrows the scrape instead of failing the
+build with an empty site. Each location is a full pass over each source, so widen this
+deliberately — `all` is ~59× the requests of the default. The deploy workflow exposes it as a
+`workflow_dispatch` input, and every listing is tagged with its district so the app can filter by
+it.
+
+**Every slug is verified, not guessed.** realestate.co.nz answers an unrecognised location with
+**HTTP 200 and the nationwide default results** — so a wrong slug does not fail, it silently tags
+real listings with a district they did not come from. `python scripts/verify_regions.py` checks
+that each location returns something different from both that fallback *and* its own region, and
+exits non-zero if not. Run it after editing the catalogue. It is what caught
+`manawatu-whanganui` (not `manawatu-wanganui`), `nelson-bays` (Nelson and Tasman are districts
+inside it), `central-otago-lakes-district` (Queenstown and Wānaka are not under `otago`), and the
+Auckland legacy councils needing a `-city` suffix. Four regions — Gisborne, Marlborough,
+Coromandel and Queenstown Lakes/Central Otago — have no district slug that narrows them, so they
+are searched at region level rather than shipping a slug that pretends to.
+
+**Why ingestion reaches above your budget.** In the affordable brackets essentially nothing
 publishes an asking price — it all sells by auction or deadline sale — so capping collection at
 the buyer's budget leaves the valuation model with almost no real prices to calibrate on. A $650k
 house with 4 bedrooms on 800m² is still a valid observation of how bedrooms and land are priced.
 The buyer's actual budget is applied downstream by the hard filters in `scoring.py`, which is
 where a preference belongs rather than in data collection.
+
+### 🎛️ Filters and criteria
+
+Nothing about the buyer is compiled in any more.
+
+- **Settings page** — budget, pre-approval, deposit, mortgage rate, loan term, boarder rent,
+  minimum backyard, and the garage / backyard / townhouse hard filters. Stored per-browser
+  (`frontend/lib/criteria.ts`), applied to every score and every finance figure the moment you
+  change them. "Reset to defaults" restores the original profile.
+- **Listings page** — district, suburb, property type, price range, bedrooms, bathrooms, minimum
+  land, garage, published-price-only, free-text search, and six sort orders. The district, suburb
+  and type menus are built from the data the build actually scraped (with counts), so they can
+  never offer an empty option. Filters are mirrored into the URL, so a search is shareable and
+  survives a reload.
+- **Backend** — `GET /api/listings` accepts the same parameters, `POST /api/listings/rescore`
+  accepts the full criteria surface, and `GET /api/regions` returns the catalogue plus what this
+  deployment covers and stores.
 
 > ⚠️ **Trade-offs of keyless scraping.** Real-estate sites use bot protection that frequently
 > blocks CI servers, so a source — or a whole build — can legitimately return **no listings**;
@@ -171,7 +233,7 @@ pip install -r backend/requirements.txt
 cp .env.example .env            # then fill in LINZ_API_KEY etc. (optional to start)
 
 cd backend
-python -m app.seed              # load sample Christchurch listings + suburbs + rates
+python -m app.seed              # load sample listings + suburbs + rates
 uvicorn app.main:app --reload --port 8000
 ```
 API now at http://localhost:8000 (docs at `/docs`).
@@ -180,7 +242,8 @@ API now at http://localhost:8000 (docs at `/docs`).
 ```bash
 cd frontend
 npm install
-python ../scripts/scrape_listings.py   # optional: scrape real listings into public/listings.json
+python ../scripts/build_listings.py    # optional: scrape real listings into public/listings.json
+#   SCRAPE_REGIONS=island:south python ../scripts/build_listings.py   # widen coverage
 npm run dev                            # http://localhost:3000  (self-contained, no backend)
 ```
 

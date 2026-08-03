@@ -35,6 +35,8 @@ class ListingOut(BaseModel):
     url: str | None = None
     address: str | None = None
     suburb: str | None = None
+    region: str | None = None
+    region_name: str | None = None
     lat: float | None = None
     lng: float | None = None
     price: float | None = None

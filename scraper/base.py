@@ -16,6 +16,10 @@ class NormalisedListing:
     url: str | None = None
     address: str | None = None
     suburb: str | None = None
+    # Which district this row was scraped from (scraper.regions key + display label),
+    # so a multi-region dataset stays filterable after the sources are merged.
+    region: str | None = None
+    region_name: str | None = None
     lat: float | None = None
     lng: float | None = None
     price: float | None = None
@@ -82,6 +86,30 @@ def parse_int(text: str | None) -> int | None:
         return None
     m = re.search(r"\d+", str(text))
     return int(m.group()) if m else None
+
+
+def suburb_from_address(address: str | None) -> str | None:
+    """Pull the suburb out of a listing address.
+
+    NZ listing addresses are "<street address>, <Suburb>" — the suburb is the *last*
+    comma-separated part. ``scripts/scrape_listings.py`` used to take ``parts[-2]``,
+    which is the street, so 18 of the 157 published listings carried a suburb like
+    "571 Madras Street". That silently broke the suburb filter, the suburb grouping on
+    the insights page, and the valuation model's suburb-median lookup (an unmatched
+    suburb falls back to the city median).
+
+    Returns None rather than a street number when the address has no suburb part.
+    """
+    if not address:
+        return None
+    parts = [p.strip() for p in address.split(",") if p.strip()]
+    if len(parts) < 2:
+        return None
+    suburb = parts[-1]
+    # A trailing part that is mostly digits is a postcode or a unit number, not a suburb.
+    if not re.search(r"[A-Za-z]{3}", suburb):
+        return None
+    return suburb.title() if suburb.isupper() else suburb
 
 
 _RENT_RE = re.compile(r"\$?\s*(\d{2,4})")

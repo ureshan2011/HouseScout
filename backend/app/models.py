@@ -35,6 +35,10 @@ class Listing(Base):
 
     address: Mapped[str | None] = mapped_column(String(255))
     suburb: Mapped[str | None] = mapped_column(String(120), index=True)
+    # District this row was scraped from — a key from scraper/regions.py. Indexed
+    # because the region filter is the first thing a nationwide dataset narrows by.
+    region: Mapped[str | None] = mapped_column(String(60), index=True)
+    region_name: Mapped[str | None] = mapped_column(String(120))
     lat: Mapped[float | None] = mapped_column(Float)
     lng: Mapped[float | None] = mapped_column(Float)
 

@@ -19,8 +19,28 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      regions:
+        description: >-
+          Districts to scrape. Keys from scraper/regions.py, comma separated
+          (christchurch-city,selwyn), a region name (canterbury), island:south,
+          or all. Leave blank for the SCRAPE_REGIONS default below.
+        required: false
+        default: ""
+      price_ceiling:
+        description: "Ingestion price ceiling (NOT the buyer's budget — the model trains on observed prices above it)"
+        required: false
+        default: "1000000"
   schedule:
     - cron: "0 */6 * * *" # every 6 hours
+
+# Coverage is configuration, not source code. Widening the search from Christchurch to
+# the whole South Island is an edit here (or a workflow_dispatch input), not a change
+# to three different scraper modules. Scraping every district costs ~40x the requests,
+# so the scheduled build stays on a deliberate short list.
+env:
+  SCRAPE_REGIONS: ${{ github.event.inputs.regions || 'christchurch-city,selwyn,waimakariri' }}
+  SCRAPE_PRICE_CEILING: ${{ github.event.inputs.price_ceiling || '1000000' }}
 
 permissions:
   contents: read
@@ -58,7 +78,11 @@ jobs:
             frontend/public/partials/
             frontend/public/photos/
 
-  # ---- Runners 1-3: Playwright scrapers (richer data, may get blocked) ---- #
+  # ---- Runners 1-2: Playwright scrapers (richer data, may get blocked) ---- #
+  # oneroof.co.nz was removed from this matrix: its configured search URL 404s (the
+  # site root is fine, every /for-sale/... path is not), so the job spent a runner
+  # every six hours uploading an empty partial. Its SiteConfig is kept but disabled —
+  # see scraper/sites.py.
   scrape-browser:
     runs-on: ubuntu-latest
     strategy:
@@ -71,9 +95,6 @@ jobs:
           - source: trademe.co.nz
             browser: firefox
             slug: trademe
-          - source: oneroof.co.nz
-            browser: chromium
-            slug: oneroof
     steps:
       - uses: actions/checkout@v4
 
@@ -134,7 +155,7 @@ jobs:
           fi
           # No fabricated fallback: an empty scrape yields an empty site.
           echo "Final listing count:"
-          python -c "import json; d=json.load(open('frontend/public/listings.json')); print(f'  {len(d)} listings from {len(set(l.get(\"suburb\",\"?\") for l in d))} suburbs')"
+          python -c "import json; d=json.load(open('frontend/public/listings.json')); print(f'  {len(d)} listings from {len(set(l.get(\"suburb\") for l in d if l.get(\"suburb\")))} suburbs across {len(set(l.get(\"region\") for l in d if l.get(\"region\")))} districts')"
 
       - name: Install pipeline dependencies
         run: pip install pillow

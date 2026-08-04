@@ -74,8 +74,8 @@ export default function Radar() {
       <header>
         <h1 className="text-2xl font-bold">Deal Radar</h1>
         <p className="text-sm text-slate-600">
-          Every listing scored on value against the model, income potential, growth outlook and land
-          — ranked by opportunity, not by how well it matches your filters.
+          Ranked by opportunity — value against the model, income, growth and land — not by how well
+          each one matches your filters.
         </p>
       </header>
 
@@ -99,7 +99,7 @@ export default function Radar() {
         <div className="card flex flex-wrap items-end gap-3 p-4">
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-slate-500">Minimum grade</span>
-            <select className="input" value={minGrade} onChange={(e) => setMinGrade(e.target.value)}>
+            <select className="input w-full" value={minGrade} onChange={(e) => setMinGrade(e.target.value)}>
               <option value="A">A only</option>
               <option value="B">B and above</option>
               <option value="C">C and above</option>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Model, loadModel } from "@/lib/predict";
+import { money } from "@/lib/viz";
 import { PLANS, applyLicence, clearLicence, getLicence, planFor } from "@/lib/subscription";
 import { useTier } from "@/components/Gate";
 import {
@@ -54,7 +55,7 @@ export default function Settings() {
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <input
-            className="input max-w-xs"
+            className="input w-full max-w-xs"
             value={licence}
             onChange={(e) => setLicence(e.target.value)}
             placeholder="HS-PRO-XXXX"
@@ -120,13 +121,12 @@ export default function Settings() {
 
       <section className="card p-4">
         <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-semibold">Your buying criteria</h2>
+          <h2 className="font-semibold">What counts as a match</h2>
           {savedAt && <span className="text-xs text-emerald-600">Saved — scores updated</span>}
         </div>
         <p className="text-sm text-slate-500">
-          These drive the match score, the pass/fail filters and every finance figure in the
-          app. Changes apply immediately and are saved in this browser — nothing is sent
-          anywhere, and there is nothing to redeploy.
+          These decide which listings pass and how they rank. The money behind every figure lives
+          under <strong>💰 Your numbers</strong> at the top of any page.
         </p>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -145,36 +145,6 @@ export default function Settings() {
             step={10_000}
             value={profile.preapproval}
             onChange={(v) => update({ preapproval: v })}
-          />
-          <NumberField
-            label="Deposit"
-            prefix="$"
-            step={5_000}
-            value={profile.deposit}
-            onChange={(v) => update({ deposit: v })}
-          />
-          <NumberField
-            label="Mortgage rate"
-            hint="Annual, as a percentage."
-            suffix="%"
-            step={0.05}
-            value={Math.round(profile.annual_rate * 10_000) / 100}
-            onChange={(v) => update({ annual_rate: v / 100 })}
-          />
-          <NumberField
-            label="Loan term"
-            suffix="years"
-            step={1}
-            value={profile.term_years}
-            onChange={(v) => update({ term_years: v })}
-          />
-          <NumberField
-            label="Boarder rent"
-            hint="Per room, per week."
-            prefix="$"
-            step={10}
-            value={profile.weekly_rent}
-            onChange={(v) => update({ weekly_rent: v })}
           />
           <NumberField
             label="Minimum backyard"
@@ -215,9 +185,34 @@ export default function Settings() {
               setSavedAt(Date.now());
             }}
           >
-            Reset to defaults
+            Reset everything to defaults
           </button>
         )}
+      </section>
+
+      <section className="card p-4">
+        <h2 className="mb-1 font-semibold">Your numbers, in full</h2>
+        <p className="mb-3 text-sm text-slate-500">
+          Every dollar figure on the site is worked out from these. Edit them here, or from{" "}
+          <strong>💰 Your numbers</strong> on any page.
+        </p>
+        <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+          <Fact k="Deposit" v={money(profile.deposit)} />
+          <Fact k="Household income before tax" v={money(profile.gross_income)} />
+          <Fact k="Interest rate" v={`${(profile.annual_rate * 100).toFixed(2)}%`} />
+          <Fact k="Loan term" v={`${profile.term_years} years`} />
+          <Fact k="Interest-only period" v={profile.interest_only_years ? `${profile.interest_only_years} years` : "none"} />
+          <Fact k="Room rent" v={`${money(profile.weekly_rent)}/wk`} />
+          <Fact k="Weeks empty each year" v={`${profile.vacancy_weeks}`} />
+          <Fact k="House price growth" v={`${profile.growth_pct}% a year`} />
+          <Fact k="Council rates" v={`${money(profile.rates_annual)}/yr`} />
+          <Fact k="Insurance" v={`${money(profile.insurance_annual)}/yr`} />
+          <Fact k="Upkeep" v={`${(profile.maintenance_pct * 100).toFixed(1)}% of value`} />
+          <Fact k="Property manager" v={profile.management_pct ? `${(profile.management_pct * 100).toFixed(1)}% of rent` : "self-managed"} />
+          <Fact k="Your living costs" v={`${money(profile.living_costs_monthly)}/mo`} />
+          <Fact k="Top tax rate" v={`${Math.round(profile.marginal_tax_rate * 100)}%`} />
+          <Fact k="Projection horizon" v={`${profile.horizon_years} years`} />
+        </dl>
       </section>
 
       <section className="card p-4">
@@ -320,6 +315,15 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div>
       <dt className="text-xs uppercase tracking-wide text-slate-400">{label}</dt>
       <dd className="font-medium">{value}</dd>
+    </div>
+  );
+}
+
+function Fact({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex justify-between gap-3 border-b border-slate-100 pb-1">
+      <dt className="text-slate-600">{k}</dt>
+      <dd className="font-medium tabular-nums text-slate-900">{v}</dd>
     </div>
   );
 }

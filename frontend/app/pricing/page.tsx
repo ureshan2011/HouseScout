@@ -76,7 +76,7 @@ export default function Pricing() {
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <input
-            className="input max-w-xs"
+            className="input w-full max-w-xs"
             value={licence}
             onChange={(e) => setLicence(e.target.value)}
             placeholder="HS-PRO-XXXX"

@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CookieConsent } from "@/components/CookieConsent";
+import { YourNumbers } from "@/components/YourNumbers";
 
 export const metadata: Metadata = {
   title: "HouseScout — Christchurch",
@@ -14,6 +15,7 @@ const nav = [
   { href: "/radar", label: "Deal Radar" },
   { href: "/watchlist", label: "Watchlist" },
   { href: "/planner", label: "Planner" },
+  { href: "/strategy", label: "Strategy" },
   { href: "/insights", label: "Insights" },
   { href: "/guide", label: "Buyer Guide" },
   { href: "/chat", label: "Assistant" },
@@ -38,6 +40,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   </Link>
                 ))}
               </nav>
+              {/* Every dollar on the site is worked out from these, so they belong
+                  in reach from every page rather than behind Settings. */}
+              <div className="ml-auto">
+                <YourNumbers />
+              </div>
             </div>
           </header>
           <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>

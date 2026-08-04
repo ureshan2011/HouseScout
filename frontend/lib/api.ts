@@ -1,10 +1,6 @@
-// Client-side "API". The app is a fully static GitHub Pages site, so every method
-// computes its result in the browser. Listings are real data fetched from the Trade
-// Me Property API at build time into /listings.json (see scripts/fetch-listings.mjs);
-// scoring and all financial analysis run here from the ported engines.
-//
-// The public surface (types, `api`, `fmt`) is unchanged so the pages/components
-// keep working as-is.
+// Client-side "API". The site is static, so every method computes its result in the
+// browser: listings come from /listings.json, built by the scrape pipeline, and
+// scoring and financial analysis run here from the ported engines.
 
 import { RATES, SUBURBS, RawListing, Provenance, DataQuality } from "./data";
 import { analyse, FinanceResult, Scenario } from "./finance";
@@ -72,11 +68,8 @@ type DataSet = {
   rawById: Map<number, RawListing>;
 };
 
-// Two caches, deliberately separate. The listings file is fetched once per page load;
-// the *scored* view is rebuilt whenever the buyer's profile changes, because every
-// score and every pass/fail depends on it. Keying the scored cache on the profile
-// signature means editing the budget in Settings re-ranks the site immediately
-// instead of serving results computed against the old criteria.
+// Two caches: the listings file is fetched once, while the scored view is keyed on
+// the profile signature so editing the budget in Settings re-ranks the site at once.
 let rawPromise: Promise<RawListing[]> | null = null;
 let scoredCache: { signature: string; data: DataSet } | null = null;
 
@@ -341,6 +334,9 @@ function scenarioFor(d: DataSet, id: number, qs: string): Finance {
     bedrooms: l?.bedrooms ?? null,
     weekly_rent: num(p.get("weekly_rent")) ?? prof.weekly_rent,
     occupancy: num(p.get("occupancy")) ?? 1.0,
+    annual_rates_bill: prof.rates_annual,
+    annual_insurance: prof.insurance_annual,
+    annual_maintenance_pct: prof.maintenance_pct,
     reinvest_boarder_income: p.get("reinvest") !== "false",
   };
   return analyse(s);
@@ -374,6 +370,57 @@ export const api = {
     };
   },
 
+  /**
+   * A market snapshot measured from this build's listings.
+   *
+   * Replaces the hand-written commentary that used to sit on the Insights page:
+   * these numbers move with the data instead of with whoever last edited the copy.
+   */
+  market: async () => {
+    const d = await loadData();
+    const rows = d.scored;
+    const prices = rows
+      .map((l) => l.price ?? l.price_estimate)
+      .filter((p): p is number => p != null)
+      .sort((a, b) => a - b);
+    const median = (xs: number[]) => (xs.length ? xs[Math.floor(xs.length / 2)] : null);
+
+    const METHODS: [RegExp, string][] = [
+      [/auction/i, "Auction"],
+      [/deadline/i, "Deadline sale"],
+      [/negotiation/i, "By negotiation"],
+      [/tender/i, "Tender"],
+      [/enquiries over/i, "Enquiries over"],
+      [/poa|price on application/i, "Price on application"],
+    ];
+    const methods = new Map<string, number>();
+    for (const l of rows) {
+      const text = l.price_text || "";
+      const hit = METHODS.find(([re]) => re.test(text));
+      const label = hit ? hit[1] : l.price != null ? "Asking price" : "Not stated";
+      methods.set(label, (methods.get(label) ?? 0) + 1);
+    }
+
+    const land = rows
+      .map((l) => l.enrichment?.land_area_m2 ?? l.land_area_m2)
+      .filter((v): v is number => v != null)
+      .sort((a, b) => a - b);
+
+    return {
+      total: rows.length,
+      medianPrice: median(prices),
+      lowPrice: prices[0] ?? null,
+      highPrice: prices[prices.length - 1] ?? null,
+      publishedPriceShare: rows.length ? rows.filter((l) => l.price != null).length / rows.length : 0,
+      garageShare: rows.length ? rows.filter((l) => l.has_garage).length / rows.length : 0,
+      medianBedrooms: median(rows.map((l) => l.bedrooms ?? 0).filter(Boolean).sort((a, b) => a - b)),
+      medianLand: median(land),
+      methods: [...methods.entries()]
+        .map(([label, count]) => ({ label, count, share: count / Math.max(1, rows.length) }))
+        .sort((a, b) => b.count - a.count),
+    };
+  },
+
   suburbs: async () => [...SUBURBS].sort((a, b) => a.median_price - b.median_price),
   rates: async () => [...RATES].sort((a, b) => a.rate - b.rate),
 
@@ -391,6 +438,9 @@ export const api = {
       bedrooms: body.bedrooms,
       weekly_rent: body.weekly_rent ?? prof.weekly_rent,
       occupancy: body.occupancy ?? 1.0,
+      annual_rates_bill: prof.rates_annual,
+      annual_insurance: prof.insurance_annual,
+      annual_maintenance_pct: prof.maintenance_pct,
       reinvest_boarder_income: body.reinvest_boarder_income ?? true,
     });
   },

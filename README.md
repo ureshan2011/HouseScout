@@ -62,6 +62,12 @@ Key modules added since v1:
 | `frontend/lib/predict.ts` | Evaluates the model in the browser: value, rent, growth, negotiation, deal score. |
 | `backend/app/analysis.py` | Deterministic written analysis + Q&A, shared by the backend and the static build. |
 | `frontend/lib/subscription.ts` | Tiers and feature entitlements. |
+| `frontend/lib/strategy.ts` | Strategy engine: borrowing capacity, equity/refinance timeline, interest-only holding, equity recycling and stress tests. Unit-tested (`npm test`). |
+| `frontend/lib/viz.ts` | The one chart palette, validated for colour-blind separation and contrast against the card surface. |
+| `frontend/lib/useProfile.ts` | The buyer's numbers as a live hook, plus the one conversion from profile to engine input. |
+| `frontend/components/YourNumbers.tsx` | The 💰 panel in the header — deposit, income, rate, rent, running costs and tax, editable from any page. |
+| `frontend/components/viz/Primitives.tsx` | Money bars, meters, milestone timelines, glossary tooltips and table views — the beginner-facing visual vocabulary. |
+| `frontend/components/ListingScenarios.tsx` | Per-listing "what you could do with it": three futures, weekly money, milestones. |
 
 ## Two ways to run it
 
@@ -317,6 +323,7 @@ for the highest-leverage fix (real sold-price history to train on).
 ```bash
 cd backend && python -m pytest -q     # engines, model, provenance, photo pipeline
 cd frontend && npx tsc --noEmit       # typecheck
+cd frontend && npm test               # finance + strategy engines (node:test, no extra deps)
 ```
 
 CI (`.github/workflows/ci.yml`) runs both on every push, plus an end-to-end smoke test of the
@@ -336,6 +343,21 @@ build pipeline.
   explanation, over/under-priced vs the model, predicted per-room and whole-house rent, a
   mean-reverting 10-year growth forecast, negotiation room, and a composite deal score
   (`scripts/hedonic.py` + `frontend/lib/predict.ts`).
+- **Your numbers, everywhere:** deposit, household income, rate, term, room rent, vacancy, growth,
+  rates, insurance, upkeep, management, tax rate and horizon all live in one profile, editable from
+  a 💰 panel in the header on every page. Dragging a slider re-ranks the listings, re-scores the
+  matches and redraws every projection live — nothing is hardcoded and nothing needs a redeploy.
+- **Scenarios on every listing:** three realistic futures for the property you're looking at —
+  live in it with boarders, rent it out, rent it interest-only — each as a weekly money bar showing
+  exactly where the rent goes and where it runs out, plus meters for deposit and rate headroom, an
+  equity-vs-debt projection, and a milestone timeline (buy → equity funds the next deposit →
+  mortgage gone). Jargon explains itself on hover; every chart has a "show the numbers" table.
+- **Strategy Lab:** what happens after you buy. Borrowing capacity under all three bank tests
+  (LVR / DTI / servicing) with the binding one named; four strategies compared through identical
+  costs and tax (clear the mortgage, recycle equity, rent on P&I, rent interest-only); the equity
+  timeline and when a top-up funds the next deposit; whether the rent covers interest, with
+  break-even rate and rent; a year-by-year portfolio plan that reports *which* test blocks the next
+  purchase; and rate/vacancy/value-fall stress tests (`frontend/lib/strategy.ts`).
 - **Deal Radar:** the whole market ranked by opportunity rather than by fit.
 - **Watchlist & compare:** shortlist properties and compare them side by side; CSV export
   and printable reports.

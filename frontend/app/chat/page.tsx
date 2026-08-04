@@ -59,10 +59,9 @@ export default function Chat() {
       </div>
 
       <p className="card bg-indigo-50 p-3 text-sm text-indigo-800">
-        Answers are computed in your browser from the loaded listing data, the finance engine and a
-        Christchurch buyer knowledge base — no model server, no API key, works offline. Ask about
-        specific listings in <strong>Listings</strong> mode, or mortgages, tax and strategy in{" "}
-        <strong>Mortgage/Invest</strong> mode.
+        Computed in your browser from the loaded listings and the finance engine — no model server.{" "}
+        <strong>Listings</strong> mode answers about specific properties;{" "}
+        <strong>Mortgage/Invest</strong> covers rates, tax and strategy.
       </p>
 
       <div className="card min-h-[50vh] space-y-4 p-4">
@@ -91,7 +90,7 @@ export default function Chat() {
         onSubmit={(e) => { e.preventDefault(); send(q); }}
         className="flex gap-2"
       >
-        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Type your question…" />
+        <input className="input w-full" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Type your question…" />
         <button className="btn" disabled={busy}>Send</button>
       </form>
     </div>

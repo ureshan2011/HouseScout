@@ -1,11 +1,12 @@
-// Financial engine — a 1:1 TypeScript port of backend/app/finance.py so the whole
-// app can run client-side (GitHub Pages: no backend). Pure functions, no I/O.
+// Financial engine — a 1:1 TypeScript port of backend/app/finance.py so the app can
+// run client-side. Pure functions, no I/O.
 //
-// Models the buyer's strategy: live in the house, rent spare rooms to boarders, and
-// funnel that income into extra mortgage repayments to be debt-free as fast as possible.
+// Models the live-in strategy: rent the spare rooms to boarders and funnel the income
+// into extra repayments. Under the IRD standard-cost method that income is effectively
+// tax-free up to a weekly threshold per boarder, 4 boarders max (2025-26: $245/wk).
 //
-// NZ-specific: the IRD "standard-cost" method makes boarder income up to a weekly
-// threshold per boarder effectively tax-free (max 4 boarders). 2025-26 threshold = $245/wk.
+// See lib/strategy.ts for what happens after year one — refinancing, holding on
+// interest-only, and buying again.
 
 // IRD standard-cost weekly amount per boarder (2025-26 income year) and boarder cap.
 export const BOARDER_TAX_FREE_WEEKLY = 245.0;

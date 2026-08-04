@@ -5,18 +5,22 @@ import Link from "next/link";
 import { api, fmt, Listing } from "@/lib/api";
 import { ListingCard } from "@/components/ListingCard";
 import { Model, loadModel } from "@/lib/predict";
+import { useProfile } from "@/lib/useProfile";
 
 export default function Dashboard() {
   const [stats, setStats] = useState<any>(null);
   const [top, setTop] = useState<Listing[]>([]);
   const [model, setModel] = useState<Model | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const profile = useProfile();
 
+  // Both figures here are scored against the buyer's criteria, so a change made
+  // from anywhere has to re-run them.
   useEffect(() => {
     api.stats().then(setStats).catch((e) => setErr(String(e)));
     api.listings("?sort=score&limit=6").then(setTop).catch(() => {});
     loadModel().then(setModel).catch(() => setModel(null));
-  }, []);
+  }, [profile]);
 
   if (err)
     return (

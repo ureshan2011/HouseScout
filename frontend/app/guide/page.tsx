@@ -1,149 +1,350 @@
 "use client";
 
 import Link from "next/link";
+import { NZ } from "@/lib/strategy";
+import { BOARDER_TAX_FREE_WEEKLY, MAX_BOARDERS } from "@/lib/finance";
 
-const sections = [
+type Section = { id: string; title: string; body: React.ReactNode };
+
+const pct = (n: number) => `${Math.round(n * 100)}%`;
+
+const sections: Section[] = [
   {
-    title: "Christchurch Market Snapshot (June 2026)",
-    content: `The Christchurch residential market remains one of New Zealand's most accessible for first-home buyers. Median house prices sit around $590,000 city-wide, but pockets under $500,000 exist — particularly in the eastern suburbs (Aranui, Linwood, Wainoni, New Brighton), the south-west (Hornby, Hoon Hay), and parts of the north (Redwood, Belfast).
-
-Interest rates have eased from their 2023-24 highs, with 1-year fixed rates now available around 4.65%. Combined with the First Home Grant (up to $10,000 for new builds, $5,000 for existing homes) and the ability to use KiwiSaver for the deposit, the market is more accessible than it has been in years.
-
-Auction remains the dominant sale method — roughly 60% of listings don't show a price upfront. This creates opportunity for prepared buyers who've done their homework on comparable sales.`,
+    id: "tests",
+    title: "Three tests you have to pass",
+    body: (
+      <>
+        <p>
+          Buyers track the deposit. Banks run three tests, and the smallest answer wins.
+        </p>
+        <ol>
+          <li>
+            <strong>Deposit / LVR.</strong> {pct(NZ.ownerOccupierMaxLvr)} of value for
+            owner-occupiers, {pct(NZ.investorMaxLvr)} for investors buying existing stock,{" "}
+            {pct(NZ.newBuildInvestorMaxLvr)} on new builds. Banks can lend past this for a small
+            share of their book — that is what a low-deposit approval is.
+          </li>
+          <li>
+            <strong>DTI.</strong> Total debt capped at {NZ.dtiOwnerOccupier}x gross income for
+            owner-occupiers, {NZ.dtiInvestor}x for investors. New builds are exempt. This is what
+            usually stops a second purchase.
+          </li>
+          <li>
+            <strong>Servicing.</strong> Repayments tested at roughly{" "}
+            {NZ.servicingBuffer * 100} points above the rate you are offered, with rent counted at
+            about {pct(NZ.rentShading)} and every card limit treated as drawn.
+          </li>
+        </ol>
+        <p>
+          The <Link href="/strategy">Strategy Lab</Link> runs all three and names the one that binds.
+        </p>
+      </>
+    ),
   },
   {
-    title: "The Boarder Strategy: Pay Off Your Mortgage Fast",
-    content: `HouseScout is built around a specific wealth-building approach: buy a multi-bedroom house, live in it, and rent the spare rooms to boarders. The maths works because of a generous NZ tax rule:
-
-Under the IRD "standard-cost" method, you can receive up to $245/week per boarder (max 4 boarders) completely tax-free. That's up to $50,960/year in tax-free income.
-
-For a typical 4-bedroom house at $450,000:
-- Mortgage payment: ~$2,140/month (at 5.19%, 30 years, $50k deposit)
-- Boarder income (3 rooms x $220/week): ~$2,860/month
-- Net position: $720/month surplus — your boarders are paying your mortgage AND generating extra cash
-
-Reinvest that surplus into extra repayments and you can pay off a 30-year mortgage in under 15 years, saving over $200,000 in interest.`,
+    id: "costs",
+    title: "What the deposit doesn't cover",
+    body: (
+      <>
+        <p>Budget about $4,000–$6,000 on top of the deposit, before you move anything:</p>
+        <ul>
+          <li>Solicitor: $1,500–$2,500</li>
+          <li>Builder&apos;s report: $600–$1,200</li>
+          <li>LIM: $300–$500</li>
+          <li>Registered valuation, if the bank wants one: $900–$1,200</li>
+          <li>Moving, connections, insurance from settlement day</li>
+        </ul>
+        <p>
+          Then a maintenance buffer. A house costs roughly 1% of its value a year to keep standing,
+          and it arrives in lumps — a roof, a hot water cylinder, a retaining wall.
+        </p>
+      </>
+    ),
   },
   {
-    title: "What to Look For",
-    content: `When hunting for a boarder-strategy property, prioritise:
-
-1. Bedrooms (4+ ideal): Each extra bedroom beyond your master is a potential income stream. A 5-bedroom home = 4 boarder rooms = maximum tax-free income.
-
-2. Garage (essential): Secure parking is non-negotiable for both your lifestyle and resale value. Internal-access garages with automatic doors command higher rents.
-
-3. Land area (50m² backyard minimum): Even a modest backyard adds lifestyle value and helps with consent if you ever add a minor dwelling.
-
-4. Separate bathroom/toilet: Multiple bathrooms make the boarder arrangement more practical. An ensuite to the master means you never share.
-
-5. Location near transport/amenities: Boarders need bus access, shops, and ideally university or hospital proximity. Riccarton, Ilam, Papanui, and Addington are boarder hotspots.`,
+    id: "help",
+    title: "First-home help, as it stands",
+    body: (
+      <>
+        <ul>
+          <li>
+            <strong>First Home Grant: gone.</strong> Scrapped on 22 May 2024. Only pre-existing
+            approvals were honoured. Any calculator still adding $5,000 or $10,000 is out of date.
+          </li>
+          <li>
+            <strong>Kāinga Ora First Home Loan: still running.</strong> 5% deposit, underwritten by
+            Kāinga Ora through participating lenders, subject to income and price caps. This is the
+            main way past the LVR wall.
+          </li>
+          <li>
+            <strong>KiwiSaver first-home withdrawal.</strong> Three years of membership, and you
+            must leave $1,000 in. Start the paperwork three months out — it takes 10–15 working days
+            and settlement will not wait.
+          </li>
+        </ul>
+      </>
+    ),
   },
   {
-    title: "How HouseScout Scores Properties",
-    content: `Every listing gets a match score (0-100) based on weighted criteria:
-
-- Rentability (30%): Number of rooms you can rent out. A 5-bed house scores 100% here; a 2-bed scores 25%.
-- Price (20%): How much headroom you have under your $500k budget. Cheaper = more deposit equity.
-- Backyard (15%): Land area from 50m² (minimum pass) to 600m²+ (maximum score). Data enriched from LINZ records.
-- Garage (10%): Binary — has garage or doesn't. Internal access and double garages score highest.
-- Property type (10%): Houses score highest, units are acceptable, townhouses are allowed but penalised.
-- Deal quality (10%): Asking below the estimated/rateable value signals a deal.
-- Freshness (5%): Newer listings get a small boost — you want first-mover advantage.
-
-Hard filters remove listings that are over budget, lack a garage, or have no backyard. The remaining listings are ranked by score.`,
+    id: "strategies",
+    title: "Four ways to play one house",
+    body: (
+      <>
+        <p>
+          These are the same purchase, held differently. The Strategy Lab runs all four through
+          identical costs and tax so the comparison means something.
+        </p>
+        <ul>
+          <li>
+            <strong>Live in it, boarders, clear the mortgage.</strong> Rent the spare rooms, put the
+            surplus into extra repayments. Lowest risk, no tenants&apos; rights complications, and
+            the income is tax-free up to the IRD threshold. One asset, so growth compounds once.
+          </li>
+          <li>
+            <strong>Live in it, boarders, recycle the equity.</strong> Same house, but the surplus
+            stays liquid and you top up the mortgage to fund a deposit on a rental. Fastest growth
+            in net worth, and the most exposed — a rate rise hits every property at once.
+          </li>
+          <li>
+            <strong>Rent it out on P&amp;I.</strong> Debt falls every month. Weakest cashflow of the
+            four, because you are repaying principal out of rent.
+          </li>
+          <li>
+            <strong>Rent it out on interest-only.</strong> Best cashflow while it lasts. You own no
+            more of the house in five years than you do today, and the payment steps up when the
+            interest-only term ends.
+          </li>
+        </ul>
+      </>
+    ),
   },
   {
-    title: "Understanding NZ Property Pricing",
-    content: `New Zealand property sales use several pricing methods:
-
-- Asking Price / Fixed Price: The vendor states what they want. You can offer below this.
-- Auction: No price guide. Research comparable sales (OneRoof, homes.co.nz) to set your max bid. Auctions are unconditional — have your finance pre-approved.
-- Deadline Sale: Offers due by a date. Multi-offer situations are common. Include conditions if needed (finance, building report).
-- Negotiation / By Negotiation: Similar to asking price but signals flexibility.
-- POA (Price on Application): Usually higher-value properties. Agent will guide.
-- Tender: Formal written offer, usually for commercial or lifestyle properties.
-
-For HouseScout properties under $500k, about 60% go to auction. Always get a pre-approval letter from your bank before attending auctions.`,
+    id: "recycle",
+    title: "The remortgage play, step by step",
+    body: (
+      <>
+        <p>
+          &quot;Use the equity to buy the next one&quot; is four concrete steps, and each one has a
+          way of failing:
+        </p>
+        <ol>
+          <li>
+            <strong>The house grows.</strong> Value rises, or you pay the loan down, or both. Equity
+            is the gap.
+          </li>
+          <li>
+            <strong>The bank revalues it.</strong> It will release up to {pct(NZ.releaseLvr)} of
+            value, minus what you still owe. On a $600k house with a $360k loan that is $120k, not
+            the $240k of equity you technically hold.
+          </li>
+          <li>
+            <strong>You top up the loan.</strong> The release is new borrowing secured against the
+            first house. Your debt goes up today; the repayments come out of the same pay packet.
+          </li>
+          <li>
+            <strong>The top-up becomes the deposit.</strong> {pct(1 - NZ.investorMaxLvr)} of the next
+            purchase, plus costs. The remaining {pct(NZ.investorMaxLvr)} is a new mortgage on the new
+            property.
+          </li>
+        </ol>
+        <p>
+          Net effect: you now owe roughly the full price of the second house across two properties.
+          That is leverage working — in both directions.
+        </p>
+      </>
+    ),
   },
   {
-    title: "First Home Grant & KiwiSaver",
-    content: `If you've been contributing to KiwiSaver for 3+ years, you may qualify for:
-
-- First Home Grant: $5,000 for existing homes ($10,000 for new builds), doubled if buying with a partner who also qualifies. Income cap: $95,000/year individual, $150,000/year combined.
-
-- KiwiSaver withdrawal: You can withdraw your full KiwiSaver balance (minus $1,000 minimum) to put towards your deposit. Combined with the grant, this can cover most of a $50,000 deposit.
-
-- First Home Loan (Kainga Ora): 5% deposit loans are available for eligible buyers. The income caps are $95,000 individual / $150,000 combined, and the property must be under the price cap ($500,000 for existing homes in Christchurch).
-
-Timeline tip: Start your KiwiSaver application 3 months before you plan to buy. The withdrawal process takes 10-15 business days.`,
+    id: "interest-only",
+    title: "Interest-only, honestly",
+    body: (
+      <>
+        <p>
+          Interest-only drops the payment to just the interest. On a $400k loan at 5.5% that is about
+          $1,833 a month instead of $2,271 — roughly $440 a month of breathing room.
+        </p>
+        <p>What it buys and what it costs:</p>
+        <ul>
+          <li>Cashflow now, which can turn a property that bleeds into one that holds itself.</li>
+          <li>
+            No equity from repayment. In five years you owe exactly what you owe today, so every
+            dollar of equity has to come from the market.
+          </li>
+          <li>
+            A payment step-up at the end. The same debt now has 25 years to clear instead of 30, so
+            the P&amp;I payment is higher than it would have been.
+          </li>
+          <li>
+            More interest over the life of the loan, because the balance sat still while it accrued.
+          </li>
+        </ul>
+        <p>
+          Banks usually grant one to five years, and typically only where the loan is comfortably
+          under {pct(NZ.releaseLvr)} LVR. It is a cashflow tool, not a plan.
+        </p>
+      </>
+    ),
   },
   {
-    title: "Suburb Deep Dives",
-    content: `Our top picks for the boarder strategy under $500k:
-
-Aranui ($370-430k): Best value in the city. Large sections, 3-4 bedrooms common. Regenerating with new community facilities. 5.8% gross yield.
-
-Hornby ($420-490k): Strong employment area near industrial zone. Excellent transport links. 4-bedroom homes available. 5.5% yield.
-
-Linwood ($400-460k): Gentrifying fast. Close to CBD. Character homes with good sections. 5.8% yield.
-
-New Brighton ($420-470k): Coastal regeneration underway (He Puna Taimoana Hot Pools, new library). Values rising 9% over 5 years. Beach lifestyle.
-
-Woolston ($430-480k): Inner-east, good value. Ferry Road café strip. Rising demand. 5.6% yield.
-
-Phillipstown ($400-450k): Very central, 5 mins to CBD. Smaller sections but strong rental demand. 5.8% yield.
-
-Wainoni ($380-440k): Affordable east. Good section sizes. Near QEII Park. 5.7% yield.
-
-Bishopdale ($460-500k): Established NW suburb. Near Nunweek Park. Good schools. 4.9% yield.`,
+    id: "tax",
+    title: "Tax rules that change the answer",
+    body: (
+      <ul>
+        <li>
+          <strong>Boarders in your own home.</strong> Under the IRD standard-cost method, up to $
+          {BOARDER_TAX_FREE_WEEKLY} a week per boarder, {MAX_BOARDERS} boarders maximum, is
+          effectively tax-free. This is what makes the live-in strategy work.
+        </li>
+        <li>
+          <strong>Rental income is taxed</strong> at your marginal rate, on rent minus interest,
+          rates, insurance, upkeep and management.
+        </li>
+        <li>
+          <strong>Interest is 100% deductible again</strong> on residential rentals from 1 April 2025.
+        </li>
+        <li>
+          <strong>Rental losses are ring-fenced.</strong> A loss carries forward against future
+          rental income. It will not reduce the tax on your salary.
+        </li>
+        <li>
+          <strong>Bright-line test: {NZ.brightLineYears} years.</strong> Sell inside that and the gain
+          is taxed. Your main home is generally exempt.
+        </li>
+        <li>
+          <strong>Principal is not an expense.</strong> Only the interest part of the payment is
+          deductible.
+        </li>
+      </ul>
+    ),
+  },
+  {
+    id: "blockers",
+    title: "What actually stops the second purchase",
+    body: (
+      <>
+        <p>Nearly always one of three things, in this order of frequency:</p>
+        <ul>
+          <li>
+            <strong>DTI.</strong> On $120k of income the investor cap is about $840k of total debt.
+            A $500k first home leaves $340k — not enough for a second purchase in most of the
+            country.
+          </li>
+          <li>
+            <strong>Servicing.</strong> The stressed rate is roughly {NZ.servicingBuffer * 100} points
+            above what you actually pay, and only {pct(NZ.rentShading)} of rent counts. Boarder income
+            usually counts for nothing here, even though it is real money.
+          </li>
+          <li>
+            <strong>Equity.</strong> The one people plan for, and the one that binds least often.
+          </li>
+        </ul>
+        <p>
+          The Portfolio Plan tab shows which of the three blocks you, year by year, instead of
+          assuming the money appears.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "buying",
+    title: "Auctions, deadlines and offers",
+    body: (
+      <>
+        <p>
+          Most NZ stock sells without a published price. What the method changes:
+        </p>
+        <ul>
+          <li>
+            <strong>Auction.</strong> Unconditional on the fall of the hammer. Finance, builder&apos;s
+            report and LIM all have to be done beforehand, at your cost, with no guarantee you win.
+            Set a ceiling from comparable sales and write it down before you go.
+          </li>
+          <li>
+            <strong>Deadline sale.</strong> Offers by a date, often multi-offer. You can still attach
+            conditions, but a clean offer beats a higher conditional one more often than people expect.
+          </li>
+          <li>
+            <strong>By negotiation / POA.</strong> The most room to move, and the least information.
+          </li>
+          <li>
+            <strong>Asking price.</strong> A starting point, not a valuation.
+          </li>
+        </ul>
+        <p>
+          Where a listing publishes no price, HouseScout shows its own estimate and labels it. Treat
+          the modelled value as your ceiling, not as a guide to the vendor&apos;s reserve.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: "mistakes",
+    title: "Five expensive beginner mistakes",
+    body: (
+      <ol>
+        <li>
+          <strong>Budgeting the mortgage, not the house.</strong> Rates, insurance and maintenance
+          run $8,000–$10,000 a year on a modest home before a single repair.
+        </li>
+        <li>
+          <strong>Assuming 52 weeks of rent.</strong> Three weeks vacant a year is a normal
+          assumption, and one bad tenancy costs more than that.
+        </li>
+        <li>
+          <strong>Treating a ring-fenced loss as a tax refund.</strong> It is not one, and it never
+          was for residential rentals.
+        </li>
+        <li>
+          <strong>Planning around today&apos;s rate.</strong> Model it 3 points higher. If the plan
+          only works at 5%, it is not a plan.
+        </li>
+        <li>
+          <strong>Counting boarder income as borrowing power.</strong> It pays the mortgage. It will
+          not get you the mortgage.
+        </li>
+      </ol>
+    ),
   },
 ];
 
 export default function GuidePage() {
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">First Home Buyer Guide</h1>
+        <h1 className="text-2xl font-bold">Buyer guide</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Everything you need to know about buying your first home in Christchurch using the boarder strategy.
+          The rules, the strategies and the arithmetic behind them. Not financial advice — see the{" "}
+          <Link href="/disclaimer" className="underline">disclaimer</Link>.
         </p>
       </div>
 
       <nav className="card p-4">
-        <p className="mb-2 text-xs font-medium uppercase text-slate-400">Jump to</p>
         <div className="flex flex-wrap gap-2">
-          {sections.map((s, i) => (
+          {sections.map((s) => (
             <a
-              key={i}
-              href={`#section-${i}`}
+              key={s.id}
+              href={`#${s.id}`}
               className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200"
             >
-              {s.title.split("(")[0].trim()}
+              {s.title}
             </a>
           ))}
         </div>
       </nav>
 
-      {sections.map((s, i) => (
-        <section key={i} id={`section-${i}`} className="card p-6">
+      {sections.map((s) => (
+        <section key={s.id} id={s.id} className="card scroll-mt-20 p-6">
           <h2 className="mb-3 text-lg font-semibold">{s.title}</h2>
-          <div className="space-y-3 text-sm leading-relaxed text-slate-700">
-            {s.content.split("\n\n").map((para, j) => (
-              <p key={j} className="whitespace-pre-line">{para}</p>
-            ))}
-          </div>
+          <div className="prose-guide space-y-3 text-sm leading-relaxed text-slate-700">{s.body}</div>
         </section>
       ))}
 
       <div className="card bg-brand/5 p-6">
-        <h2 className="mb-2 font-semibold">Ready to start?</h2>
-        <p className="mb-4 text-sm text-slate-600">
-          Browse our scored listings to find properties that match the boarder strategy,
-          or use the financial planner to model any scenario.
-        </p>
-        <div className="flex gap-3">
-          <Link href="/listings" className="btn">Browse listings</Link>
-          <Link href="/planner" className="btn-ghost">Financial planner</Link>
+        <h2 className="mb-2 font-semibold">Put numbers on it</h2>
+        <div className="flex flex-wrap gap-3">
+          <Link href="/strategy" className="btn">Strategy Lab</Link>
+          <Link href="/planner" className="btn-ghost">Mortgage planner</Link>
+          <Link href="/listings" className="btn-ghost">Browse listings</Link>
         </div>
       </div>
     </div>

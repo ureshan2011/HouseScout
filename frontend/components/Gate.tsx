@@ -97,14 +97,10 @@ export function Gate({
   return <>{fallback ?? <UpgradePrompt feature={feature} title={title} blurb={blurb} />}</>;
 }
 
-/**
- * Blurs a teaser behind the paywall so the value is visible but not readable —
- * markedly better at converting than hiding the feature entirely.
- */
+/** Blurs a teaser behind the paywall: shape and layout stay readable, values don't. */
 export function BlurredTeaser({ children }: { children: React.ReactNode }) {
   return (
-    // Blur strength matters: at 5px large figures were still legible, which gives the
-    // paid number away. 9px leaves the shape and layout readable but not the values.
+    // 9px, not 5px — at 5px the large figures were still legible.
     <div className="pointer-events-none select-none blur-[9px] saturate-50" aria-hidden>
       {children}
     </div>

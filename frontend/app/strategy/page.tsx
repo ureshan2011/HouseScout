@@ -11,6 +11,7 @@ import {
   StrategyId,
   borrowingCapacity,
   compareStrategies,
+  compareWeekly,
   equityTimeline,
   holdAnalysis,
   refinancePoint,
@@ -19,6 +20,8 @@ import {
 } from "@/lib/strategy";
 import { Gate } from "@/components/Gate";
 import { EquityChart, NetWorthChart, ShockChart } from "@/components/StrategyCharts";
+import { Meter, MoneyBar, TableView, Term, Verdict } from "@/components/viz/Primitives";
+import { INK, SERIES, STATUS, money, signedWeekly } from "@/lib/viz";
 
 type Inputs = SimInput & { nextPrice: number };
 
@@ -160,37 +163,56 @@ function CapacityTab({ f }: { f: Inputs }) {
   );
 
   const BINDING: Record<string, string> = {
-    deposit: "Save more, or buy under the LVR limit with a First Home Loan or a new build.",
-    DTI: "The DTI cap bites before the deposit does. More income or less other debt is the only lever.",
-    servicing: "The bank's stressed-rate test bites first. Clearing consumer debt and card limits helps most.",
+    deposit: "Saving more is what moves this. A First Home Loan or a new build lets you in with less.",
+    DTI: "The income cap bites before the deposit does. More income, or less other debt, is the only lever.",
+    servicing: "The bank's stress test bites first. Clearing card limits and consumer debt helps most.",
   };
 
   return (
     <div className="space-y-4">
       <section className="card p-4">
         <h2 className="font-semibold">Three tests, and you have to pass all three</h2>
-        <div className="mt-3 grid gap-4 md:grid-cols-2">
-          <CapacityCard title="As an owner-occupier" c={owner} maxLvr={NZ.ownerOccupierMaxLvr} />
-          <CapacityCard title="As an investor" c={investor} maxLvr={NZ.investorMaxLvr} />
+        <p className="mb-4 mt-0.5 text-sm text-slate-500">
+          The lowest of the three is what you can spend. It is usually not the deposit.
+        </p>
+        <div className="grid gap-5 md:grid-cols-2">
+          <CapacityCard title="Buying a home to live in" c={owner} maxLvr={NZ.ownerOccupierMaxLvr} />
+          <CapacityCard title="Buying a rental" c={investor} maxLvr={NZ.investorMaxLvr} />
         </div>
-        <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
-          <strong>Binding constraint: {owner.limitedBy}.</strong> {BINDING[owner.limitedBy]}
+        <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+          <strong>What&apos;s holding you back: {owner.limitedBy}.</strong> {BINDING[owner.limitedBy]}
         </p>
       </section>
 
       <section className="card p-4 text-sm text-slate-700">
-        <h2 className="mb-2 font-semibold">The rules behind these numbers</h2>
+        <h2 className="mb-2 font-semibold">What the three tests are</h2>
         <ul className="ml-5 list-disc space-y-1.5">
-          <li><strong>LVR</strong> — {Math.round(NZ.ownerOccupierMaxLvr * 100)}% for owner-occupiers, {Math.round(NZ.investorMaxLvr * 100)}% for investors on existing stock, {Math.round(NZ.newBuildInvestorMaxLvr * 100)}% on new builds. Banks can go past it for a small share of lending.</li>
-          <li><strong>DTI</strong> — total debt capped at {NZ.dtiOwnerOccupier}x gross income for owner-occupiers, {NZ.dtiInvestor}x for investors. New builds are exempt.</li>
-          <li><strong>Servicing</strong> — tested at about {(NZ.servicingBuffer * 100).toFixed(0)} points above the offered rate ({owner.testRatePct}% here), with rent counted at {Math.round(NZ.rentShading * 100)}%.</li>
-          <li><strong>Boarder income</strong> — tax-free up to the IRD threshold, but most banks won&apos;t count it for servicing. It helps you pay the loan; it won&apos;t get you the loan.</li>
+          <li>
+            <Term k="LVR">Deposit test (LVR)</Term> — you can borrow up to{" "}
+            {Math.round(NZ.ownerOccupierMaxLvr * 100)}% of the price for your own home,{" "}
+            {Math.round(NZ.investorMaxLvr * 100)}% for a rental, {Math.round(NZ.newBuildInvestorMaxLvr * 100)}% on a new build.
+          </li>
+          <li>
+            <Term k="DTI">Income cap (DTI)</Term> — your total debt can&apos;t pass{" "}
+            {NZ.dtiOwnerOccupier}x your yearly income for your own home, {NZ.dtiInvestor}x for a rental.
+            New builds are exempt.
+          </li>
+          <li>
+            <Term k="servicing">Affordability test</Term> — checked at {owner.testRatePct}%, about{" "}
+            {(NZ.servicingBuffer * 100).toFixed(0)} points above the rate you&apos;d actually pay. Only{" "}
+            {Math.round(NZ.rentShading * 100)}% of any rent counts.
+          </li>
+          <li>
+            <Term k="boarder">Boarder income</Term> is tax-free, but most banks won&apos;t count it
+            here. It helps you pay the loan; it won&apos;t get you the loan.
+          </li>
         </ul>
       </section>
     </div>
   );
 }
 
+/** The three limits side by side, with the binding one called out by name. */
 function CapacityCard({
   title,
   c,
@@ -201,32 +223,48 @@ function CapacityCard({
   maxLvr: number;
 }) {
   const bars = [
-    { label: `Deposit (${Math.round(maxLvr * 100)}% LVR)`, value: c.depositHeadroom },
-    { label: `DTI (${c.dtiCap}x income)`, value: c.dtiHeadroom },
-    { label: `Servicing @ ${c.testRatePct}%`, value: c.servicingHeadroom },
+    { key: "deposit", label: "Your deposit allows", value: c.depositHeadroom },
+    { key: "DTI", label: `Income cap (${c.dtiCap}x)`, value: c.dtiHeadroom },
+    { key: "servicing", label: `Affordability @ ${c.testRatePct}%`, value: c.servicingHeadroom },
   ];
   const max = Math.max(...bars.map((b) => b.value), 1);
   return (
-    <div className="rounded-lg bg-slate-50 p-3">
+    <div>
       <p className="text-xs uppercase tracking-wide text-slate-500">{title}</p>
-      <p className="text-2xl font-bold">{fmt.money(c.maxPurchase)}</p>
+      <p className="text-3xl font-semibold text-slate-900">{money(c.maxPurchase)}</p>
       <p className="mb-3 text-xs text-slate-500">
-        {fmt.money(c.maxLoan)} loan — limited by {c.limitedBy}
+        {money(c.maxLoan)} borrowed, at {Math.round(maxLvr * 100)}% of the price
       </p>
-      {bars.map((b) => (
-        <div key={b.label} className="mb-1.5">
-          <div className="flex justify-between text-xs">
-            <span className="text-slate-600">{b.label}</span>
-            <span className="tabular-nums text-slate-500">{fmt.money(b.value)}</span>
-          </div>
-          <div className="mt-0.5 h-1.5 overflow-hidden rounded-full bg-slate-200">
-            <div
-              className={`h-full ${b.value === c.maxLoan ? "bg-rose-500" : "bg-brand"}`}
-              style={{ width: `${(b.value / max) * 100}%` }}
-            />
-          </div>
-        </div>
-      ))}
+      <ul className="space-y-2">
+        {bars.map((b) => {
+          const binding = b.key === c.limitedBy;
+          return (
+            <li key={b.key}>
+              <div className="flex items-baseline justify-between gap-2 text-xs">
+                <span className={binding ? "font-medium text-slate-900" : "text-slate-600"}>
+                  {b.label}
+                  {binding && <span className="ml-1 text-rose-700">← the limit</span>}
+                </span>
+                <span className="font-medium tabular-nums text-slate-900">{money(b.value)}</span>
+              </div>
+              <div className="mt-1 h-2 overflow-hidden rounded-full" style={{ background: INK.quiet }}>
+                <div
+                  className="h-full rounded-full"
+                  style={{ width: `${(b.value / max) * 100}%`, background: binding ? STATUS.critical : SERIES[0] }}
+                />
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <TableView
+        caption={title}
+        rows={[
+          ...bars.map((b) => ({ label: b.label, value: money(b.value) })),
+          { label: "Most you can borrow", value: money(c.maxLoan) },
+          { label: "Most you can spend", value: money(c.maxPurchase) },
+        ]}
+      />
     </div>
   );
 }
@@ -243,11 +281,44 @@ function CompareTab({ f }: { f: Inputs }) {
       blurb="Four ways to play the same purchase, run through the same maths, taxes and costs — so the comparison is real."
     >
       <div className="space-y-4">
-        <section className="card overflow-x-auto p-4">
+        <section className="card p-4">
           <h2 className="mb-1 font-semibold">Same house, four plays, {f.years} years</h2>
-          <p className="mb-3 text-xs text-slate-500">
-            Ranked by net worth at the horizon. The highest number is not automatically the right answer.
+          <p className="mb-4 text-xs text-slate-500">
+            What you&apos;d be worth at the end. The biggest bar is not automatically the right answer —
+            the one underneath each bar is what it costs you to get there.
           </p>
+          <ul className="mb-5 space-y-3">
+            {rows.map((r, i) => (
+              <li key={r.strategy}>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-sm">
+                  <span className={i === 0 ? "font-semibold text-slate-900" : "text-slate-700"}>
+                    {r.label}
+                  </span>
+                  <span className="font-semibold tabular-nums text-slate-900">{money(r.netWorth)}</span>
+                </div>
+                <div className="mt-1 h-3 overflow-hidden rounded-r-sm" style={{ background: INK.quiet }}>
+                  <div
+                    className="h-full rounded-r-sm"
+                    style={{
+                      width: `${(r.netWorth / Math.max(...rows.map((x) => x.netWorth), 1)) * 100}%`,
+                      // Emphasis, not eight hues: the leader is the point, the
+                      // rest are context.
+                      background: i === 0 ? SERIES[0] : INK.muted,
+                    }}
+                  />
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  {r.properties} propert{r.properties === 1 ? "y" : "ies"} ·{" "}
+                  <span className={r.weeklyCashflow >= 0 ? "text-emerald-700" : "text-rose-700"}>
+                    {signedWeekly(r.weeklyCashflow)}
+                  </span>{" "}
+                  · {money(r.debt)} still owed
+                  {r.debtFreeYear ? ` · debt-free in year ${r.debtFreeYear}` : ""}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase text-slate-400 [&>th]:whitespace-nowrap [&>th]:pr-4">
@@ -279,6 +350,7 @@ function CompareTab({ f }: { f: Inputs }) {
               ))}
             </tbody>
           </table>
+          </div>
         </section>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -386,95 +458,113 @@ function EquityTab({ f }: { f: Inputs }) {
 // Holding it
 // --------------------------------------------------------------------------- //
 function HoldTab({ f }: { f: Inputs }) {
-  const loan = Math.max(0, f.price - f.deposit);
+  const weekly = useMemo(() => compareWeekly(f), [f]);
   const io = useMemo(
     () =>
       holdAnalysis({
-        value: f.price, loan, annualRate: f.annualRate, weeklyRent: f.wholeHouseWeeklyRent,
-        interestOnly: true, termYears: f.termYears, marginalTaxRate: f.marginalTaxRate,
+        value: f.price, loan: Math.max(0, f.price - f.deposit), annualRate: f.annualRate,
+        weeklyRent: f.wholeHouseWeeklyRent, interestOnly: true, termYears: f.termYears,
+        marginalTaxRate: f.marginalTaxRate,
       }),
-    [f, loan],
+    [f],
   );
-  const pi = useMemo(
-    () =>
-      holdAnalysis({
-        value: f.price, loan, annualRate: f.annualRate, weeklyRent: f.wholeHouseWeeklyRent,
-        interestOnly: false, termYears: f.termYears, marginalTaxRate: f.marginalTaxRate,
-      }),
-    [f, loan],
-  );
-
   const headroom = io.breakEvenRatePct - f.annualRate * 100;
+  const pick = (id: StrategyId) => weekly.find((w) => w.strategy === id)!;
 
   return (
     <div className="space-y-4">
       <section className="card p-4">
-        <h2 className="mb-1 font-semibold">Can the tenant hold it?</h2>
-        <p className="mb-3 text-xs text-slate-500">
-          {fmt.money(loan)} of debt, {fmt.money(f.wholeHouseWeeklyRent)}/wk rent, 3 weeks vacancy allowed.
+        <h2 className="font-semibold">Where your money goes each week</h2>
+        <p className="mb-4 mt-0.5 text-sm text-slate-500">
+          Same house, same debt — only the plan changes.
         </p>
-        <div className="grid gap-4 md:grid-cols-2">
-          <HoldCard title="Interest-only" h={io} />
-          <HoldCard title="Principal & interest" h={pi} />
+        <div className="space-y-5">
+          {(["holdIO", "holdPI", "payoff"] as StrategyId[]).map((id) => {
+            const w = pick(id);
+            return (
+              <div key={id} className="rounded-xl border border-slate-200 p-4">
+                <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">{w.label}</h3>
+                    <p className="text-xs text-slate-500">{w.plain}</p>
+                  </div>
+                  <Verdict status={w.netWeekly >= 50 ? "good" : w.netWeekly >= 0 ? "warning" : "critical"}>
+                    {signedWeekly(w.netWeekly)}
+                  </Verdict>
+                </div>
+                <MoneyBar
+                  income={w.incomeWeekly}
+                  incomeLabel={w.incomeLabel}
+                  segments={[
+                    { label: "Interest", weekly: w.interestWeekly },
+                    { label: "Loan repaid", weekly: w.principalWeekly },
+                    { label: "Rates, insurance, upkeep", weekly: w.runningWeekly },
+                    { label: "Tax", weekly: w.taxWeekly },
+                  ]}
+                  leftOver={w.netWeekly}
+                />
+              </div>
+            );
+          })}
         </div>
       </section>
 
       <section className="card p-4">
-        <h2 className="mb-3 font-semibold">Where it breaks</h2>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Stat label="Break-even rate" value={`${io.breakEvenRatePct}%`} hint={`you're at ${(f.annualRate * 100).toFixed(2)}%`} accent={headroom > 0} />
-          <Stat label="Rate headroom" value={`${headroom.toFixed(2)} pts`} />
-          <Stat label="Break-even rent" value={`${fmt.money(io.breakEvenRentWeekly)}/wk`} />
-        </div>
-        <p className="mt-3 text-sm text-slate-600">
-          {headroom > 1.5
-            ? `Rates would have to reach ${io.breakEvenRatePct}% before the rent stops covering interest and running costs. That is real headroom.`
-            : headroom > 0
-              ? `Only ${headroom.toFixed(2)} points of headroom. One rate cycle and you are topping this up from your salary every week.`
-              : `The rent already doesn't cover interest and running costs. You are funding ${fmt.money(Math.abs(io.weeklyAfterTax))}/wk from your salary before anything goes wrong.`}
+        <h2 className="mb-1 font-semibold">How much rates can rise before it hurts</h2>
+        <p className="mb-4 text-sm text-slate-500">
+          Rented out on <Term k="interest-only">interest-only</Term>, at{" "}
+          {money(f.wholeHouseWeeklyRent)}/wk.
         </p>
+        <div className="grid gap-5 md:grid-cols-2">
+          <Meter
+            label="Rate headroom"
+            value={Math.max(0, headroom)}
+            max={4}
+            display={`${headroom > 0 ? "+" : ""}${headroom.toFixed(1)} pts`}
+            status={headroom > 1.5 ? "good" : headroom > 0 ? "warning" : "critical"}
+            statusText={
+              headroom > 1.5 ? "Real breathing room"
+              : headroom > 0 ? "One rate cycle from trouble"
+              : "Already short every week"
+            }
+            hint={`The rent stops covering interest and running costs at ${io.breakEvenRatePct}%. You're paying ${(f.annualRate * 100).toFixed(2)}%.`}
+          />
+          <Meter
+            label="Rent needed to break even"
+            value={io.breakEvenRentWeekly}
+            max={Math.max(io.breakEvenRentWeekly, f.wholeHouseWeeklyRent) * 1.25}
+            limit={f.wholeHouseWeeklyRent}
+            limitLabel={`you'd get ${money(f.wholeHouseWeeklyRent)}/wk`}
+            display={`${money(io.breakEvenRentWeekly)}/wk`}
+            status={io.breakEvenRentWeekly <= f.wholeHouseWeeklyRent ? "good" : "critical"}
+            statusText={
+              io.breakEvenRentWeekly <= f.wholeHouseWeeklyRent
+                ? "The rent covers it"
+                : `${money(io.breakEvenRentWeekly - f.wholeHouseWeeklyRent)}/wk short`
+            }
+          />
+        </div>
       </section>
 
       <section className="card p-4 text-sm text-slate-700">
         <h2 className="mb-2 font-semibold">Tax, honestly</h2>
         <ul className="ml-5 list-disc space-y-1.5">
-          <li>Rental interest is 100% deductible again from 1 April 2025.</li>
-          <li>A net rental loss is ring-fenced: it carries forward against future rental income and cannot reduce tax on your salary.</li>
-          <li>Principal repayments are not deductible — only the interest part is.</li>
-          <li>Sell inside {NZ.brightLineYears} years and the gain is taxed under the bright-line test.</li>
-          <li>Boarders in your own home are different: income up to the IRD standard-cost threshold per boarder is effectively tax-free, up to 4 boarders.</li>
+          <li>Rental interest is fully deductible again from 1 April 2025.</li>
+          <li>
+            A rental that loses money is <Term k="ring-fenced">ring-fenced</Term> — the loss waits
+            for future rental income and never cuts the tax on your wages.
+          </li>
+          <li>Paying the loan down isn&apos;t an expense. Only the interest part is.</li>
+          <li>
+            Sell inside {NZ.brightLineYears} years and the profit is taxed —{" "}
+            <Term k="bright-line">the bright-line test</Term>.
+          </li>
+          <li>
+            <Term k="boarder">Boarders</Term> in your own home are different: tax-free up to the IRD
+            threshold, for up to 4 of them.
+          </li>
         </ul>
       </section>
-    </div>
-  );
-}
-
-function HoldCard({ title, h }: { title: string; h: ReturnType<typeof holdAnalysis> }) {
-  const ok = h.afterTaxCashflow >= 0;
-  return (
-    <div className={`rounded-lg p-3 ${ok ? "bg-emerald-50" : "bg-rose-50"}`}>
-      <p className="text-xs uppercase tracking-wide text-slate-500">{title}</p>
-      <p className={`text-2xl font-bold ${ok ? "text-emerald-700" : "text-rose-700"}`}>
-        {fmt.money(h.weeklyAfterTax)}/wk
-      </p>
-      <p className="mb-2 text-xs text-slate-500">after tax, after every cost</p>
-      <dl className="space-y-1 text-xs">
-        <Row k="Rent (net of vacancy)" v={fmt.money(h.annualRent)} />
-        <Row k="Interest" v={`−${fmt.money(h.annualInterest)}`} />
-        <Row k="Principal" v={h.annualPrincipal ? `−${fmt.money(h.annualPrincipal)}` : "—"} />
-        <Row k="Rates, insurance, upkeep" v={`−${fmt.money(h.annualOpex)}`} />
-        <Row k="Tax" v={h.tax ? `−${fmt.money(h.tax)}` : "nil"} />
-        {h.ringFencedLoss > 0 && <Row k="Loss carried forward" v={fmt.money(h.ringFencedLoss)} />}
-      </dl>
-    </div>
-  );
-}
-
-function Row({ k, v }: { k: string; v: string }) {
-  return (
-    <div className="flex justify-between gap-2">
-      <dt className="text-slate-600">{k}</dt>
-      <dd className="tabular-nums font-medium">{v}</dd>
     </div>
   );
 }

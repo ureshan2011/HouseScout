@@ -11,12 +11,14 @@ import {
   NZ,
   borrowingCapacity,
   compareStrategies,
+  compareWeekly,
   equityTimeline,
   holdAnalysis,
   interestOnlyMonthly,
   refinancePoint,
   simulate,
   stressTest,
+  weeklyBreakdown,
   type SimInput,
 } from "./strategy";
 
@@ -227,6 +229,51 @@ test("stress tests move the right way and flag trouble", () => {
 
   const worst = rows[rows.length - 1];
   assert.ok(worst.verdict !== "fine", "the combined shock should not read as fine");
+});
+
+test("the weekly breakdown adds up to the net, and matches the simulation", () => {
+  for (const b of compareWeekly(BASE)) {
+    const out = b.interestWeekly + b.principalWeekly + b.runningWeekly + b.taxWeekly;
+    // Five independently rounded weekly figures, so allow the rounding drift.
+    assert.ok(
+      Math.abs(b.incomeWeekly - out - b.netWeekly) <= 3,
+      `${b.strategy}: ${b.incomeWeekly} - ${out} != ${b.netWeekly}`,
+    );
+    // Year one of the full simulation is the same money, to rounding.
+    const sim = simulate(b.strategy, { ...BASE, years: 1 });
+    assert.ok(
+      Math.abs(sim.final.weeklyCashflow - b.netWeekly) < 2,
+      `${b.strategy}: breakdown ${b.netWeekly} vs simulation ${sim.final.weeklyCashflow}`,
+    );
+  }
+});
+
+test("interest-only shows no principal, and P&I shows some", () => {
+  const io = weeklyBreakdown("holdIO", BASE);
+  const pi = weeklyBreakdown("holdPI", BASE);
+  assert.equal(io.principalWeekly, 0);
+  assert.ok(pi.principalWeekly > 0);
+  // P&I pays slightly less interest even in year one, because the balance is
+  // already falling. Interest-only never gets that discount.
+  assert.ok(io.interestWeekly > pi.interestWeekly);
+  assert.ok(io.netWeekly > pi.netWeekly);
+});
+
+test("boarder income under the threshold is untaxed; a rental profit is not", () => {
+  const boarders = weeklyBreakdown("payoff", { ...BASE, roomWeeklyRent: 200 });
+  assert.equal(boarders.taxWeekly, 0, "under $245/wk per boarder is tax-free");
+
+  const rental = weeklyBreakdown("holdIO", {
+    ...BASE, deposit: 400_000, wholeHouseWeeklyRent: 700,
+  });
+  assert.ok(rental.taxWeekly > 0, "a barely-geared rental turns a taxable profit");
+});
+
+test("every strategy explains itself without jargon", () => {
+  for (const b of compareWeekly(BASE)) {
+    assert.ok(b.plain.length > 20 && b.incomeLabel.length > 0);
+    assert.ok(!/LVR|DTI|amorti|ring-fenc/i.test(b.plain), `${b.strategy} leaks jargon`);
+  }
 });
 
 test("a highly geared position is called out as trouble", () => {

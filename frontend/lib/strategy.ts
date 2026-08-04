@@ -712,6 +712,112 @@ export function simulate(strategy: StrategyId, input: SimInput): Simulation {
   };
 }
 
+// --------------------------------------------------------------------------- //
+// One week of money — the beginner-facing view of a strategy
+// --------------------------------------------------------------------------- //
+export type WeeklyBreakdown = {
+  strategy: StrategyId;
+  label: string;
+  /** What you are actually doing, in a sentence with no jargon in it. */
+  plain: string;
+  incomeLabel: string;
+  incomeWeekly: number;
+  interestWeekly: number;
+  principalWeekly: number;
+  /** Rates, insurance, upkeep and management. */
+  runningWeekly: number;
+  taxWeekly: number;
+  /** Income minus everything. Negative means it comes out of your wages. */
+  netWeekly: number;
+};
+
+const PLAIN: Record<StrategyId, string> = {
+  payoff: "You live here and rent the spare rooms. Every spare dollar goes onto the mortgage.",
+  recycle: "You live here and rent the spare rooms, but keep the cash to put a deposit on a rental.",
+  holdPI: "You rent the whole house to a tenant and pay the mortgage down normally.",
+  holdIO: "You rent the whole house to a tenant and pay only the interest, so the loan stays put.",
+};
+
+const INCOME_LABEL: Record<StrategyId, string> = {
+  payoff: "Boarders pay you",
+  recycle: "Boarders pay you",
+  holdPI: "Tenant pays you",
+  holdIO: "Tenant pays you",
+};
+
+/**
+ * The first year of a strategy, reduced to one week of money.
+ *
+ * Interest and principal come from running twelve real months rather than
+ * `loan x rate`, so the split is the one the bank would actually charge.
+ */
+export function weeklyBreakdown(strategy: StrategyId, input: SimInput): WeeklyBreakdown {
+  const ownerOccupied = strategy === "payoff" || strategy === "recycle";
+  const interestOnly = strategy === "holdIO";
+  const taxRate = input.marginalTaxRate ?? DEFAULTS.marginalTaxRate;
+  const vacancy = input.vacancyWeeks ?? DEFAULTS.vacancyWeeks;
+  const r = input.annualRate / MONTHS_PER_YEAR;
+
+  const loan = Math.max(0, input.price - input.deposit);
+  const pmt = monthlyPI(loan, input.annualRate, input.termYears);
+  let balance = loan;
+  let interest = 0;
+  let principal = 0;
+  for (let m = 0; m < MONTHS_PER_YEAR; m++) {
+    const i = balance * r;
+    interest += i;
+    if (!interestOnly) {
+      const p = Math.min(balance, Math.max(0, pmt - i));
+      balance -= p;
+      principal += p;
+    }
+  }
+
+  const boarders = boarderWeekly(input.bedrooms, input.roomWeeklyRent);
+  const rentWeeks = Math.max(0, WEEKS_PER_YEAR - vacancy);
+  const annualIncome = ownerOccupied
+    ? boarders.gross * WEEKS_PER_YEAR
+    : input.wholeHouseWeeklyRent * rentWeeks;
+
+  const management = ownerOccupied
+    ? 0
+    : annualIncome * (input.managementPct ?? DEFAULTS.managementPct);
+  const running =
+    (input.ratesAnnual ?? DEFAULTS.ratesAnnual) +
+    (input.insuranceAnnual ?? DEFAULTS.insuranceAnnual) +
+    input.price * (input.maintenancePct ?? DEFAULTS.maintenancePct) +
+    management;
+
+  // Boarder income is tax-free to the IRD threshold; rental profit is taxed, and
+  // a rental loss is ring-fenced rather than refunded.
+  const tax = ownerOccupied
+    ? boarders.taxable * WEEKS_PER_YEAR * taxRate
+    : Math.max(0, annualIncome - running - interest * NZ.interestDeductible) * taxRate;
+
+  const wk = (annual: number) => round(annual / WEEKS_PER_YEAR);
+  const net = annualIncome - running - interest - principal - tax;
+
+  return {
+    strategy,
+    label: STRATEGY_LABEL[strategy],
+    plain: PLAIN[strategy],
+    incomeLabel: INCOME_LABEL[strategy],
+    incomeWeekly: wk(annualIncome),
+    interestWeekly: wk(interest),
+    principalWeekly: wk(principal),
+    runningWeekly: wk(running),
+    taxWeekly: wk(tax),
+    netWeekly: wk(net),
+  };
+}
+
+/** All four strategies as one week of money each, in a fixed order. */
+export function compareWeekly(input: SimInput): WeeklyBreakdown[] {
+  return (["payoff", "recycle", "holdPI", "holdIO"] as StrategyId[]).map((s) =>
+    weeklyBreakdown(s, input),
+  );
+}
+
 export type Comparison = {
   strategy: StrategyId;
   label: string;

@@ -14,6 +14,7 @@ const nav = [
   { href: "/radar", label: "Deal Radar" },
   { href: "/watchlist", label: "Watchlist" },
   { href: "/planner", label: "Planner" },
+  { href: "/strategy", label: "Strategy" },
   { href: "/insights", label: "Insights" },
   { href: "/guide", label: "Buyer Guide" },
   { href: "/chat", label: "Assistant" },

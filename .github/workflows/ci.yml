@@ -81,6 +81,10 @@ jobs:
         working-directory: frontend
         run: npx tsc --noEmit
 
+      - name: Test the finance and strategy engines
+        working-directory: frontend
+        run: npm test
+
       - name: Build
         working-directory: frontend
         run: npm run build

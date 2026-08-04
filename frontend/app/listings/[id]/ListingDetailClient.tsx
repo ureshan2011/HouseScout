@@ -16,6 +16,7 @@ import {
   DealBadge,
 } from "@/components/ValuationPanel";
 import { PrintReportButton } from "@/components/PrintReport";
+import { NextMoveCard } from "@/components/NextMoveCard";
 
 export default function ListingDetailClient() {
   const params = useParams<{ id: string }>();
@@ -121,6 +122,7 @@ export default function ListingDetailClient() {
         <NegotiationCard listing={l} />
         <ForecastCard listing={l} />
       </div>
+      <NextMoveCard listing={l} />
 
       {/* Finance */}
       {fin && (

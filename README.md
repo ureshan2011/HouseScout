@@ -62,6 +62,7 @@ Key modules added since v1:
 | `frontend/lib/predict.ts` | Evaluates the model in the browser: value, rent, growth, negotiation, deal score. |
 | `backend/app/analysis.py` | Deterministic written analysis + Q&A, shared by the backend and the static build. |
 | `frontend/lib/subscription.ts` | Tiers and feature entitlements. |
+| `frontend/lib/strategy.ts` | Strategy engine: borrowing capacity, equity/refinance timeline, interest-only holding, equity recycling and stress tests. Unit-tested (`npm test`). |
 
 ## Two ways to run it
 
@@ -317,6 +318,7 @@ for the highest-leverage fix (real sold-price history to train on).
 ```bash
 cd backend && python -m pytest -q     # engines, model, provenance, photo pipeline
 cd frontend && npx tsc --noEmit       # typecheck
+cd frontend && npm test               # finance + strategy engines (node:test, no extra deps)
 ```
 
 CI (`.github/workflows/ci.yml`) runs both on every push, plus an end-to-end smoke test of the
@@ -336,6 +338,12 @@ build pipeline.
   explanation, over/under-priced vs the model, predicted per-room and whole-house rent, a
   mean-reverting 10-year growth forecast, negotiation room, and a composite deal score
   (`scripts/hedonic.py` + `frontend/lib/predict.ts`).
+- **Strategy Lab:** what happens after you buy. Borrowing capacity under all three bank tests
+  (LVR / DTI / servicing) with the binding one named; four strategies compared through identical
+  costs and tax (clear the mortgage, recycle equity, rent on P&I, rent interest-only); the equity
+  timeline and when a top-up funds the next deposit; whether the rent covers interest, with
+  break-even rate and rent; a year-by-year portfolio plan that reports *which* test blocks the next
+  purchase; and rate/vacancy/value-fall stress tests (`frontend/lib/strategy.ts`).
 - **Deal Radar:** the whole market ranked by opportunity rather than by fit.
 - **Watchlist & compare:** shortlist properties and compare them side by side; CSV export
   and printable reports.

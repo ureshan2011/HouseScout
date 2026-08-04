@@ -1,14 +1,6 @@
-// The buyer's profile — an editable preference, not a build-time constant.
-//
-// These numbers used to live in three places as literals: `DEFAULTS` in lib/data.ts,
-// `defaultCriteria()` in lib/scoring.ts, and `Settings` in backend/app/config.py. The
-// Settings page said, in as many words, "to change them permanently, edit
-// frontend/lib/data.ts and redeploy" — so a $500k cap, a required garage and a 5.19%
-// mortgage rate were baked into every score the app produced, for every visitor.
-//
-// Everything below is now stored per-browser and applied at scoring time. The
-// literals survive as FACTORY_DEFAULTS, so an untouched browser behaves exactly as
-// the old build did; the difference is that changing them is a form field.
+// The buyer's profile — stored per-browser and applied at scoring time, so the
+// budget, deposit and rate that drive every score are a form field rather than a
+// build-time constant. FACTORY_DEFAULTS is what an untouched browser gets.
 
 const STORAGE_KEY = "housescout.profile.v1";
 

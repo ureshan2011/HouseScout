@@ -1,24 +1,10 @@
 // Subscription tiers and feature entitlements.
 //
-// HOW ENFORCEMENT WORKS — read this before relying on it commercially
-// -------------------------------------------------------------------
-// HouseScout ships as a static site (GitHub Pages), so there is no server in the
-// request path and *all* gating here is client-side. Client-side gating is a
-// product/UX mechanism, not a security boundary: a determined user can unlock every
-// tier from the browser console, and the underlying data is in `listings.json`
-// anyway.
-//
-// That is a deliberate, acceptable trade-off for launch — it lets the paywall,
-// pricing and upgrade flows be built and tested now — but it is NOT a billing
-// system. Before charging real money the entitlement check must move server-side:
-//
-//   1. Stripe Checkout (or Paddle) for payment; webhook writes the subscription.
-//   2. A small API (`/api/entitlement`) that returns the tier for a signed-in user.
-//   3. Gate the *data*, not just the UI: serve Pro fields (valuation, forecasts,
-//      Deal Radar) from an authenticated endpoint rather than the public JSON.
-//
-// `resolveEntitlement()` is the single seam for that change — swap its body for a
-// fetch against the real API and every `<Gate>` in the app follows.
+// NOT A BILLING SYSTEM. The site is static, so all gating here is client-side —
+// a UX mechanism, not a security boundary. Before charging real money: take
+// payment through Stripe/Paddle, return the tier from an authenticated endpoint,
+// and gate the *data* rather than the UI. `resolveEntitlement()` is the one seam
+// to swap; every `<Gate>` in the app follows it.
 
 export type Tier = "free" | "pro" | "investor";
 
@@ -35,6 +21,8 @@ export type Feature =
   | "csvExport"          // export matches to CSV
   | "printReport"        // print/PDF property report
   | "rateStress"         // interest-rate stress testing
+  | "strategyLab"        // compare buy-and-hold / refinance / payoff strategies
+  | "portfolioPlan"      // multi-property equity-recycling projection
   | "unlimitedListings"; // browse past the free-tier cap
 
 /** Which tier each feature unlocks at. */
@@ -49,6 +37,8 @@ export const FEATURE_TIER: Record<Feature, Tier> = {
   csvExport: "pro",
   printReport: "pro",
   rateStress: "investor",
+  strategyLab: "pro",
+  portfolioPlan: "investor",
   unlimitedListings: "pro",
 };
 
@@ -75,6 +65,7 @@ export const PLANS: Plan[] = [
       "Match score against your criteria",
       "Mortgage & boarder-income calculator",
       "Accelerated payoff simulator",
+      "Borrowing capacity: deposit, DTI and servicing",
       "Suburb affordability table",
       "Buyer guide & NZ tax rules",
     ],
@@ -91,6 +82,8 @@ export const PLANS: Plan[] = [
       "Over/under-priced vs the model",
       "Negotiation room & target offer price",
       "10-year capital growth forecast",
+      "Strategy Lab — payoff vs hold vs refinance",
+      "Equity timeline: when you can buy again",
       "Deal Radar — market-wide bargains ranked",
       "Watchlist & side-by-side compare",
       "CSV export and printable reports",
@@ -104,10 +97,10 @@ export const PLANS: Plan[] = [
     tagline: "Stress-test the plan and model the whole portfolio.",
     features: [
       "Everything in Buyer Pro",
-      "Interest-rate stress testing",
-      "Multi-property portfolio modelling",
-      "Equity & net-worth projections",
-      "Break-even and worst-case analysis",
+      "Interest-rate and vacancy stress testing",
+      "Portfolio plan — equity recycling year by year",
+      "What blocks the next purchase: equity, DTI or servicing",
+      "Break-even rate and rent on every hold",
       "Priority access to new models",
     ],
     cta: "Upgrade to Investor",
@@ -120,13 +113,7 @@ export const PLANS: Plan[] = [
 const LS_TIER = "housescout.tier";
 const LS_LICENCE = "housescout.licence";
 
-/**
- * Licence keys are `HS-<TIER>-<TOKEN>`, e.g. `HS-PRO-8FJ2K1`.
- *
- * The format is intentionally simple because verifying it in the browser proves
- * nothing (see the module header) — it exists so the upgrade flow is real and
- * testable end-to-end, and so the seam for server-verified licences already exists.
- */
+/** Licence keys are `HS-<TIER>-<TOKEN>`, e.g. `HS-PRO-8FJ2K1`. */
 export function tierFromLicence(licence: string): Tier | null {
   const m = /^HS-(FREE|PRO|INVESTOR)-[A-Z0-9]{4,}$/i.exec(licence.trim());
   if (!m) return null;
@@ -167,11 +154,8 @@ export function clearLicence(): void {
 }
 
 /**
- * The single seam to swap for real server-side entitlement.
- *
- * Today: reads the locally stored tier, and honours a `?licence=` query parameter
- * so a checkout provider can redirect back into the app with the purchased tier.
- * Tomorrow: `return (await fetch("/api/entitlement")).json()`.
+ * The single seam to swap for real server-side entitlement. Reads the stored tier
+ * and honours `?licence=`, so a checkout can redirect back with the purchased tier.
  */
 export async function resolveEntitlement(): Promise<Tier> {
   if (typeof window === "undefined") return "free";

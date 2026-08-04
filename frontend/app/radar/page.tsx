@@ -74,8 +74,8 @@ export default function Radar() {
       <header>
         <h1 className="text-2xl font-bold">Deal Radar</h1>
         <p className="text-sm text-slate-600">
-          Every listing scored on value against the model, income potential, growth outlook and land
-          — ranked by opportunity, not by how well it matches your filters.
+          Ranked by opportunity — value against the model, income, growth and land — not by how well
+          each one matches your filters.
         </p>
       </header>
 

@@ -1,17 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { api, fmt } from "@/lib/api";
+import { analyse } from "@/lib/finance";
+import { loadProfile } from "@/lib/criteria";
 
 export default function Insights() {
   const [suburbs, setSuburbs] = useState<any[]>([]);
   const [rates, setRates] = useState<any[]>([]);
   const [stats, setStats] = useState<any>(null);
+  const [market, setMarket] = useState<Awaited<ReturnType<typeof api.market>> | null>(null);
 
   useEffect(() => {
     api.suburbs().then(setSuburbs);
     api.rates().then(setRates);
     api.stats().then(setStats).catch(() => {});
+    api.market().then(setMarket).catch(() => {});
   }, []);
 
   return (
@@ -31,19 +36,42 @@ export default function Insights() {
         </section>
       )}
 
-      <section className="card p-4">
-        <h2 className="mb-2 font-semibold">Market overview (June 2026)</h2>
-        <div className="grid gap-4 text-sm text-slate-700 md:grid-cols-2">
-          <div className="space-y-2">
-            <p>Christchurch residential prices have stabilised after the 2023-24 correction, with affordable eastern and southern suburbs showing renewed buyer interest.</p>
-            <p>Interest rate cuts since late 2024 have improved affordability — 1-year fixed rates now sit around 4.65%, down from 7%+ peaks. This has particularly boosted the sub-$500k segment.</p>
+      {market && market.total > 0 && (
+        <section className="card p-4">
+          <h2 className="mb-1 font-semibold">What&apos;s on the market right now</h2>
+          <p className="mb-3 text-xs text-slate-400">
+            Measured from the {fmt.num(market.total)} listings in this build.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard
+              label="Median price"
+              value={fmt.money(market.medianPrice)}
+              hint={`${fmt.money(market.lowPrice)} – ${fmt.money(market.highPrice)}`}
+            />
+            <StatCard
+              label="Publish an asking price"
+              value={fmt.pct(market.publishedPriceShare * 100)}
+              hint="the rest show a HouseScout estimate"
+            />
+            <StatCard label="Have a garage" value={fmt.pct(market.garageShare * 100)} />
+            <StatCard
+              label="Median section"
+              value={market.medianLand ? `${Math.round(market.medianLand)} m²` : "—"}
+              hint={market.medianBedrooms ? `${market.medianBedrooms} bed typical` : undefined}
+            />
           </div>
-          <div className="space-y-2">
-            <p>Eastern suburbs (Aranui, Wainoni, New Brighton) continue to benefit from regeneration investment including the He Puna Taimoana Hot Pools and new community facilities.</p>
-            <p>The boarder strategy remains exceptionally viable at current rates: a 4-bedroom house at $450k with 3 rooms rented at $220/wk generates $2,860/mo — covering the typical $2,140/mo mortgage payment with surplus for accelerated repayment.</p>
+          <div className="mt-4">
+            <p className="mb-2 text-xs uppercase tracking-wide text-slate-400">How they&apos;re sold</p>
+            <div className="flex flex-wrap gap-2">
+              {market.methods.map((m) => (
+                <span key={m.label} className="badge bg-slate-100 text-slate-700">
+                  {m.label} · {fmt.pct(m.share * 100)}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       <section className="card p-4">
         <h2 className="mb-3 font-semibold">Christchurch suburbs (affordability vs yield)</h2>
@@ -78,56 +106,14 @@ export default function Insights() {
         <p className="mt-3 text-xs text-slate-400">Indicative figures based on market data. Yields calculated as (annual rent / median price). Not financial advice.</p>
       </section>
 
-      <section className="card p-4">
-        <h2 className="mb-3 font-semibold">Boarder strategy comparison</h2>
-        <p className="mb-3 text-xs text-slate-400">
-          How the room-rental strategy works across different price points. Assumes $50k deposit, 5.19% rate, 30yr term, $220/wk per room.
-        </p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase text-slate-400">
-                <th className="py-2">Scenario</th>
-                <th>Price</th>
-                <th>Beds</th>
-                <th>Rooms to rent</th>
-                <th>Monthly income</th>
-                <th>Monthly mortgage</th>
-                <th>Net position</th>
-                <th>Payoff</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                { label: "2-bed entry", price: 380000, beds: 2, rooms: 1, income: 953, mortgage: 1810, payoff: "23 yr" },
-                { label: "3-bed standard", price: 450000, beds: 3, rooms: 2, income: 1907, mortgage: 2192, payoff: "18 yr" },
-                { label: "4-bed ideal", price: 480000, beds: 4, rooms: 3, income: 2860, mortgage: 2356, payoff: "13 yr" },
-                { label: "5-bed maximum", price: 500000, beds: 5, rooms: 4, income: 3813, mortgage: 2466, payoff: "10 yr" },
-              ].map((s) => (
-                <tr key={s.label} className="border-t border-slate-100">
-                  <td className="py-2 font-medium">{s.label}</td>
-                  <td>{fmt.money(s.price)}</td>
-                  <td>{s.beds}</td>
-                  <td>{s.rooms}</td>
-                  <td className="text-emerald-700">{fmt.money(s.income)}</td>
-                  <td className="text-red-600">{fmt.money(s.mortgage)}</td>
-                  <td className={s.income >= s.mortgage ? "font-semibold text-emerald-700" : "text-amber-700"}>
-                    {fmt.money(s.income - s.mortgage)}/mo
-                  </td>
-                  <td className="font-semibold">{s.payoff}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <BoarderLadder />
 
       <section className="card p-4">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-semibold">Current mortgage rates (lowest by term)</h2>
         </div>
         <p className="mb-2 text-xs text-slate-400">
-          Indicative June 2026 rates. Run the optional Python backend to refresh live from interest.co.nz.
+          Bundled snapshot. The optional Python backend refreshes these from interest.co.nz.
         </p>
         <div className="flex flex-wrap gap-3">
           {rates.map((r, i) => (
@@ -142,17 +128,87 @@ export default function Insights() {
       <section className="card p-4">
         <h2 className="mb-3 font-semibold">Data sources</h2>
         <div className="space-y-2 text-sm text-slate-600">
-          <p>Listings are scraped every 6 hours from multiple sources using parallel CI runners:</p>
+          <p>Listings refresh every 6 hours, merged and deduplicated by address:</p>
           <ul className="ml-5 list-disc space-y-1">
-            <li><strong>realestate.co.nz</strong> — Primary source. API + Playwright scraping with Chromium.</li>
-            <li><strong>trademe.co.nz</strong> — Secondary source. Playwright with Firefox (different browser fingerprint).</li>
-            <li><strong>oneroof.co.nz</strong> — Tertiary source. Used for enrichment data (estimates, RV).</li>
-            <li><strong>LINZ</strong> — Official NZ land data for accurate land area figures.</li>
+            <li><strong>realestate.co.nz</strong> and <strong>trademe.co.nz</strong> — listings</li>
+            <li><strong>oneroof.co.nz</strong> — estimates and rateable values</li>
+            <li><strong>LINZ</strong> — land area, CC-BY 4.0</li>
           </ul>
-          <p>Each source runs on a separate GitHub Actions runner (different IP address), with varied browser engines and user-agent signatures to minimise blocking. Results are merged, deduplicated by normalised address, and the richest record is kept.</p>
+          <p>Anything we couldn&apos;t observe is labelled as an estimate on the listing itself.</p>
         </div>
       </section>
     </div>
+  );
+}
+
+/**
+ * How the boarder strategy scales with bedrooms — run through the same engine the
+ * planner uses, against the visitor's own profile, rather than typed in by hand.
+ */
+function BoarderLadder() {
+  const rows = useMemo(() => {
+    const p = loadProfile();
+    return [2, 3, 4, 5].map((beds) => {
+      const price = Math.round(p.max_price * (0.76 + beds * 0.06));
+      const f = analyse({
+        price,
+        deposit: p.deposit,
+        annual_rate: p.annual_rate,
+        term_years: p.term_years,
+        bedrooms: beds,
+        weekly_rent: p.weekly_rent,
+      });
+      return { beds, price, f };
+    });
+  }, []);
+  const p = loadProfile();
+
+  return (
+    <section className="card p-4">
+      <h2 className="mb-1 font-semibold">Boarder income by bedroom count</h2>
+      <p className="mb-3 text-xs text-slate-400">
+        Your profile: {fmt.money(p.deposit)} deposit, {(p.annual_rate * 100).toFixed(2)}%,{" "}
+        {p.term_years} years, {fmt.money(p.weekly_rent)}/wk per room. Includes rates, insurance and
+        maintenance. <Link href="/settings" className="underline">Change it</Link>.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs uppercase text-slate-400">
+              <th className="py-2">Beds</th>
+              <th>Price</th>
+              <th>Rooms let</th>
+              <th>Room income/mo</th>
+              <th>Mortgage/mo</th>
+              <th>Out of pocket/mo</th>
+              <th>Payoff</th>
+              <th>Interest saved</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ beds, price, f }) => (
+              <tr key={beds} className="border-t border-slate-100">
+                <td className="py-2 font-medium">{beds}</td>
+                <td>{fmt.money(price)}</td>
+                <td>{f.boarder.rentable_rooms}</td>
+                <td className="text-emerald-700">{fmt.money(f.monthly_boarder_income)}</td>
+                <td className="text-rose-600">{fmt.money(f.monthly_payment)}</td>
+                <td className={f.net_monthly_outlay <= 0 ? "font-semibold text-emerald-700" : "text-amber-700"}>
+                  {fmt.money(f.net_monthly_outlay)}
+                </td>
+                <td className="font-semibold">{f.accelerated.payoff_years ?? "—"} yr</td>
+                <td>{fmt.money(f.interest_saved)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-3 text-xs text-slate-400">
+        Boarder income is tax-free up to the IRD threshold, and most banks won&apos;t count it toward
+        what they&apos;ll lend you. See the <Link href="/strategy" className="underline">Strategy Lab</Link>{" "}
+        for what happens after year one.
+      </p>
+    </section>
   );
 }
 

@@ -7,11 +7,8 @@ import { Gate, BlurredTeaser, UpgradePrompt } from "@/components/Gate";
 
 // Surfaces the prediction engine (frontend/lib/predict.ts) on a listing.
 //
-// Every figure here is produced by the in-app model — no external service, no
-// language model — and each one shows the reasoning that produced it. The
-// confidence band and sample size are shown *prominently* rather than buried,
-// because a valuation fitted on a handful of published prices must not read as
-// a registered valuation.
+// Confidence and sample size stay visible rather than buried: a valuation fitted
+// on a handful of published prices must not read as a registered valuation.
 
 export function useModel(): Model | null {
   const [model, setModel] = useState<Model | null>(null);
@@ -48,9 +45,9 @@ const VERDICT_LABEL: Record<string, string> = {
 };
 
 const CONFIDENCE_NOTE: Record<string, string> = {
-  low: "Low confidence — few published asking prices to calibrate against, so this leans on documented valuation relationships.",
-  medium: "Medium confidence — calibrated on a modest sample of published asking prices.",
-  high: "High confidence — calibrated on a substantial sample of published asking prices.",
+  low: "Few published prices to calibrate against.",
+  medium: "Calibrated on a modest sample.",
+  high: "Calibrated on a substantial sample.",
 };
 
 function ConfidenceBadge({ p }: { p: Prediction }) {
@@ -91,10 +88,9 @@ function ValuationBody({ listing, p }: { listing: Listing; p: Prediction }) {
 
       {!pos && (
         <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-900">
-          This listing publishes no asking price ({listing.price_text || "method not stated"}), so
-          there is nothing to compare the model against — the {fmt.money(listing.price)} shown
-          elsewhere is HouseScout&apos;s own estimate. Use the modelled value above as your
-          reference and verify it against recent comparable sales.
+          No asking price published ({listing.price_text || "method not stated"}), so there is
+          nothing to compare against. Treat the modelled value as your ceiling and check it against
+          recent comparable sales.
         </p>
       )}
 
@@ -124,10 +120,10 @@ function ValuationBody({ listing, p }: { listing: Listing; p: Prediction }) {
       </div>
 
       <p className="border-t border-slate-100 pt-3 text-xs text-slate-500">
-        {CONFIDENCE_NOTE[v.confidence]} Calibrated on {v.n_train} published asking price
+        {CONFIDENCE_NOTE[v.confidence]} {v.n_train} published price
         {v.n_train === 1 ? "" : "s"}
-        {v.cv_mae_pct != null ? `, cross-validated error ±${v.cv_mae_pct}%` : ""}. Indicative only —
-        not a registered valuation.
+        {v.cv_mae_pct != null ? `, cross-validated error ±${v.cv_mae_pct}%` : ""}. Indicative, not a
+        registered valuation.
       </p>
     </div>
   );
@@ -225,8 +221,8 @@ export function NegotiationCard({ listing }: { listing: Listing }) {
             ))}
           </ul>
           <p className="text-xs text-slate-500">
-            Derived from sale method, days on market and price versus the model. A guide for
-            framing an offer, not a prediction of the vendor&apos;s reserve.
+            From sale method, days on market and price versus the model. Not a prediction of the
+            vendor&apos;s reserve.
           </p>
         </div>
       </Gate>
@@ -287,9 +283,8 @@ export function ForecastCard({ listing }: { listing: Listing }) {
             ))}
           </div>
           <p className="text-xs text-slate-500">
-            Suburb growth blended toward the {g.anchorPct}%/yr city anchor, because a suburb running
-            hot or cold reverts rather than compounding forever. The band widens with the square
-            root of time. Projections, not promises.
+            Suburb growth reverts toward the {g.anchorPct}%/yr city rate, with the band widening
+            over time. Projections, not promises.
           </p>
         </div>
       </Gate>
@@ -322,9 +317,8 @@ export function RentCard({ listing }: { listing: Listing }) {
         </div>
       </div>
       <p className="mt-2 text-xs text-slate-500">
-        From {listing.suburb || "the suburb"}&apos;s {r.suburbYieldPct}% reference yield. Letting
-        room-by-room beats a whole-house tenancy per dollar of house, which is why the per-room
-        figure sits above a simple divide-by-bedrooms.
+        From {listing.suburb || "the suburb"}&apos;s {r.suburbYieldPct}% reference yield. Room-by-room
+        letting earns more per dollar of house, so it sits above a simple divide-by-bedrooms.
       </p>
     </section>
   );

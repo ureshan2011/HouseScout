@@ -52,6 +52,12 @@ body {
   }
 }
 
+/* Buyer guide prose — lists and links, nothing more. */
+.prose-guide ul { @apply ml-5 list-disc space-y-1.5; }
+.prose-guide ol { @apply ml-5 list-decimal space-y-1.5; }
+.prose-guide a { @apply text-brand-dark underline; }
+.prose-guide strong { @apply font-semibold text-slate-900; }
+
 /* Lightweight markdown styling for generated analysis */
 .prose-ai h2 { @apply mt-3 text-base font-semibold; }
 .prose-ai strong { @apply font-semibold text-slate-900; }

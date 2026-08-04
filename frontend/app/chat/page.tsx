@@ -90,7 +90,7 @@ export default function Chat() {
         onSubmit={(e) => { e.preventDefault(); send(q); }}
         className="flex gap-2"
       >
-        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Type your question…" />
+        <input className="input w-full" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Type your question…" />
         <button className="btn" disabled={busy}>Send</button>
       </form>
     </div>

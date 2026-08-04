@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import { api, Facet, Listing } from "@/lib/api";
 import { ListingCard } from "@/components/ListingCard";
 import { UpgradePrompt, useFeature } from "@/components/Gate";
 import { FREE_LISTING_LIMIT } from "@/lib/subscription";
+import { useProfile } from "@/lib/useProfile";
 
 // MapLibre touches `window`, so load it client-side only.
 const ListingsMap = dynamic(() => import("@/components/ListingsMap").then((m) => m.ListingsMap), {
@@ -117,6 +119,7 @@ export default function ListingsPage() {
   const [showAll, setShowAll] = useState(false);
   const [view, setView] = useState<"grid" | "map">("grid");
   const unlimited = useFeature("unlimitedListings");
+  const profile = useProfile();
 
   // Free tier sees the best matches; the rest is behind the paywall. Capping the
   // *tail* rather than the head means the free plan is genuinely useful, which is
@@ -147,6 +150,10 @@ export default function ListingsPage() {
 
   // Every filter change re-queries and rewrites the address bar. All of this runs in
   // the browser over an already-loaded array, so there is no request to debounce.
+  //
+  // The profile is a dependency too: budget, garage and backyard are hard filters and
+  // the match score is computed from the same numbers, so editing them from anywhere
+  // has to re-rank the page. Without this, raising your budget left the list unchanged.
   useEffect(() => {
     const qs = toQuery(filters);
     setLoading(true);
@@ -157,7 +164,7 @@ export default function ListingsPage() {
     if (typeof window !== "undefined") {
       window.history.replaceState(null, "", `${window.location.pathname}?${qs}`);
     }
-  }, [filters]);
+  }, [filters, profile]);
 
   const active = useMemo(() => activeCount(filters), [filters]);
 
@@ -197,7 +204,7 @@ export default function ListingsPage() {
             />
           </Field>
           <Field label="Sort">
-            <select className="input" value={filters.sort} onChange={(e) => set({ sort: e.target.value })}>
+            <select className="input w-full" value={filters.sort} onChange={(e) => set({ sort: e.target.value })}>
               <option value="score">Best match</option>
               <option value="price">Price (low → high)</option>
               <option value="price_desc">Price (high → low)</option>
@@ -318,11 +325,7 @@ export default function ListingsPage() {
       {loading ? (
         <p className="text-sm text-slate-500">Loading…</p>
       ) : listings.length === 0 ? (
-        <p className="text-sm text-slate-500">
-          {active > 0
-            ? "No listings match these filters. Try clearing a few, or widen your criteria in Settings."
-            : "No listings available — check that the build-time scrape returned data."}
-        </p>
+        <EmptyState active={active} onClear={() => setFilters(EMPTY)} />
       ) : view === "map" ? (
         <ListingsMap listings={capped} />
       ) : (
@@ -449,6 +452,52 @@ function ChipGroup({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Why the list is empty.
+ *
+ * "Nothing was scraped" and "nothing clears your criteria" look identical on
+ * screen and need opposite responses, so this checks whether the dataset has
+ * anything in it at all before blaming the build. Now that budget, garage and
+ * backyard are the visitor's own settings, an all-fail result is the common case
+ * and the message has to point at them.
+ */
+function EmptyState({ active, onClear }: { active: number; onClear: () => void }) {
+  const [total, setTotal] = useState<number | null>(null);
+  useEffect(() => {
+    api.listings("?passes_only=false&limit=1").then((r) => setTotal(r.length));
+  }, []);
+
+  if (total === 0) {
+    return (
+      <p className="text-sm text-slate-500">
+        No listings in this build — the scrape returned nothing.
+      </p>
+    );
+  }
+  return (
+    <div className="card p-4 text-sm">
+      <p className="font-medium text-slate-900">Nothing clears your criteria.</p>
+      <p className="mt-1 text-slate-600">
+        There are listings here, but every one is knocked out by your budget, the garage or
+        backyard requirement, or the filters above.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {active > 0 && (
+          <button className="btn-ghost" onClick={onClear}>
+            Clear the filters
+          </button>
+        )}
+        <Link href="/settings" className="btn-ghost">
+          Loosen my criteria
+        </Link>
+      </div>
+      <p className="mt-3 text-xs text-slate-500">
+        Raising the price ceiling under <strong>💰 Your numbers</strong> is usually the fastest fix.
+      </p>
     </div>
   );
 }

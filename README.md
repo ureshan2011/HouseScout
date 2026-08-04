@@ -64,6 +64,8 @@ Key modules added since v1:
 | `frontend/lib/subscription.ts` | Tiers and feature entitlements. |
 | `frontend/lib/strategy.ts` | Strategy engine: borrowing capacity, equity/refinance timeline, interest-only holding, equity recycling and stress tests. Unit-tested (`npm test`). |
 | `frontend/lib/viz.ts` | The one chart palette, validated for colour-blind separation and contrast against the card surface. |
+| `frontend/lib/useProfile.ts` | The buyer's numbers as a live hook, plus the one conversion from profile to engine input. |
+| `frontend/components/YourNumbers.tsx` | The 💰 panel in the header — deposit, income, rate, rent, running costs and tax, editable from any page. |
 | `frontend/components/viz/Primitives.tsx` | Money bars, meters, milestone timelines, glossary tooltips and table views — the beginner-facing visual vocabulary. |
 | `frontend/components/ListingScenarios.tsx` | Per-listing "what you could do with it": three futures, weekly money, milestones. |
 
@@ -341,6 +343,10 @@ build pipeline.
   explanation, over/under-priced vs the model, predicted per-room and whole-house rent, a
   mean-reverting 10-year growth forecast, negotiation room, and a composite deal score
   (`scripts/hedonic.py` + `frontend/lib/predict.ts`).
+- **Your numbers, everywhere:** deposit, household income, rate, term, room rent, vacancy, growth,
+  rates, insurance, upkeep, management, tax rate and horizon all live in one profile, editable from
+  a 💰 panel in the header on every page. Dragging a slider re-ranks the listings, re-scores the
+  matches and redraws every projection live — nothing is hardcoded and nothing needs a redeploy.
 - **Scenarios on every listing:** three realistic futures for the property you're looking at —
   live in it with boarders, rent it out, rent it interest-only — each as a weekly money bar showing
   exactly where the rent goes and where it runs out, plus meters for deposit and rate headroom, an

@@ -3,10 +3,9 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Listing } from "@/lib/api";
-import { loadProfile } from "@/lib/criteria";
+import { useProfile, scenarioInput } from "@/lib/useProfile";
 import {
   NZ,
-  SimInput,
   StrategyId,
   WeeklyBreakdown,
   compareWeekly,
@@ -21,8 +20,6 @@ import { EquityChart } from "@/components/StrategyCharts";
 import { usePrediction } from "@/components/ValuationPanel";
 import { Gate } from "@/components/Gate";
 
-const HORIZON = 15;
-
 /**
  * "What could I actually do with this house?" — the three realistic futures for
  * one listing, drawn rather than tabulated.
@@ -33,27 +30,26 @@ const HORIZON = 15;
  */
 export function ListingScenarios({ listing }: { listing: Listing }) {
   const p = usePrediction(listing);
+  const profile = useProfile();
   const [picked, setPicked] = useState<StrategyId>("payoff");
 
   const model = useMemo(() => {
     if (!p) return null;
-    const profile = loadProfile();
     const price = listing.price ?? listing.price_estimate ?? profile.preapproval;
-    const deposit = Math.min(profile.deposit, price);
     const bedrooms = listing.bedrooms ?? 3;
+    const horizon = profile.horizon_years;
 
-    const input: SimInput = {
+    // The buyer's own numbers, with this listing's price and the model's
+    // suburb-specific rent and growth on top.
+    const input = scenarioInput(profile, {
       price,
-      deposit,
-      annualRate: profile.annual_rate,
-      termYears: profile.term_years,
       bedrooms,
       roomWeeklyRent: p.rent.perRoomWeekly,
       wholeHouseWeeklyRent: p.rent.wholeHouseWeekly,
       growthPct: p.growth.year1Pct,
-      grossIncome: 120_000,
-      years: HORIZON,
-    };
+      years: horizon,
+    });
+    const deposit = input.deposit;
 
     const weekly = compareWeekly(input).filter((w) => w.strategy !== "recycle");
     const timeline = equityTimeline({
@@ -61,7 +57,7 @@ export function ListingScenarios({ listing }: { listing: Listing }) {
       annualRate: profile.annual_rate,
       termYears: profile.term_years,
       growthPct: p.growth.year1Pct,
-      years: HORIZON,
+      years: horizon,
     });
     const refi = refinancePoint(timeline, { nextPrice: price, growthPct: p.growth.year1Pct });
     const payoff = simulate("payoff", input);
@@ -69,6 +65,12 @@ export function ListingScenarios({ listing }: { listing: Listing }) {
       value: price, loan: Math.max(0, price - deposit),
       annualRate: profile.annual_rate, weeklyRent: p.rent.wholeHouseWeekly,
       interestOnly: true, termYears: profile.term_years,
+      vacancyWeeks: profile.vacancy_weeks,
+      ratesAnnual: profile.rates_annual,
+      insuranceAnnual: profile.insurance_annual,
+      maintenancePct: profile.maintenance_pct,
+      managementPct: profile.management_pct,
+      marginalTaxRate: profile.marginal_tax_rate,
     });
 
     const seed = new URLSearchParams({
@@ -80,14 +82,14 @@ export function ListingScenarios({ listing }: { listing: Listing }) {
     }).toString();
 
     return {
-      input, weekly, timeline, refi, payoff, io, price, deposit, bedrooms, seed,
+      input, weekly, timeline, refi, payoff, io, price, deposit, bedrooms, seed, horizon,
       rooms: Math.max(0, Math.min(bedrooms - 1, 4)),
       lvr: price > 0 ? ((price - deposit) / price) * 100 : 0,
       rateHeadroom: io.breakEvenRatePct - profile.annual_rate * 100,
       valueIn10: p.growth.valueIn10,
       growthPct: p.growth.year1Pct,
     };
-  }, [p, listing]);
+  }, [p, listing, profile]);
 
   if (!model) return null;
   const chosen = model.weekly.find((w) => w.strategy === picked) ?? model.weekly[0];
@@ -194,12 +196,12 @@ export function ListingScenarios({ listing }: { listing: Listing }) {
           </div>
 
           <div className="rounded-xl border border-slate-200 p-4">
-            <h3 className="mb-1 text-sm font-semibold text-slate-900">Your next {HORIZON} years</h3>
+            <h3 className="mb-1 text-sm font-semibold text-slate-900">Your next {model.horizon} years</h3>
             <p className="mb-4 text-xs text-slate-500">
               Living in it and putting the room rent onto the mortgage.
             </p>
             <Milestones
-              horizon={HORIZON}
+              horizon={model.horizon}
               items={[
                 { year: 0, label: "You buy it", detail: `${money(model.deposit)} deposit`, reached: true },
                 {
@@ -224,11 +226,11 @@ export function ListingScenarios({ listing }: { listing: Listing }) {
                 { label: "Value in 10 years", value: money(model.valueIn10) },
                 {
                   label: "Equity covers next deposit",
-                  value: model.refi.year !== null ? yearsWord(model.refi.year) : `not within ${HORIZON} years`,
+                  value: model.refi.year !== null ? yearsWord(model.refi.year) : `not within ${model.horizon} years`,
                 },
                 {
                   label: "Mortgage cleared",
-                  value: model.payoff.debtFreeYear !== null ? yearsWord(model.payoff.debtFreeYear) : `not within ${HORIZON} years`,
+                  value: model.payoff.debtFreeYear !== null ? yearsWord(model.payoff.debtFreeYear) : `not within ${model.horizon} years`,
                 },
               ]}
             />

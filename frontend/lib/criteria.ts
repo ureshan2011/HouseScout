@@ -18,9 +18,29 @@ export type BuyerProfile = {
   require_backyard: boolean;
   min_backyard_m2: number;
   allow_townhouse: boolean;
+
+  // --- Everything the strategy engine used to assume on the buyer's behalf --- //
+  /** Household income before tax. Drives the DTI and servicing tests. */
+  gross_income: number;
+  /** Capital growth used by the Strategy Lab. Listings use their suburb's own rate. */
+  growth_pct: number;
+  marginal_tax_rate: number;
+  rates_annual: number;
+  insurance_annual: number;
+  /** Annual maintenance as a share of the property's value. */
+  maintenance_pct: number;
+  /** Property-management fee as a share of rent. Zero if you manage it yourself. */
+  management_pct: number;
+  /** Weeks a year with no tenant. */
+  vacancy_weeks: number;
+  interest_only_years: number;
+  /** How far the projections run. */
+  horizon_years: number;
+  /** Monthly living costs, used by the bank's affordability test. */
+  living_costs_monthly: number;
 };
 
-/** The values that were hardcoded before this file existed. */
+/** The values the app assumes until a buyer says otherwise. */
 export const FACTORY_DEFAULTS: BuyerProfile = {
   max_price: 500_000,
   preapproval: 480_000,
@@ -32,6 +52,17 @@ export const FACTORY_DEFAULTS: BuyerProfile = {
   require_backyard: true,
   min_backyard_m2: 50,
   allow_townhouse: true,
+  gross_income: 120_000,
+  growth_pct: 5,
+  marginal_tax_rate: 0.33,
+  rates_annual: 3_200,
+  insurance_annual: 2_200,
+  maintenance_pct: 0.01,
+  management_pct: 0,
+  vacancy_weeks: 3,
+  interest_only_years: 5,
+  horizon_years: 20,
+  living_costs_monthly: 2_400,
 };
 
 // Bounds are sanity rails, not opinions: they stop a stray keystroke (or a stale
@@ -45,6 +76,17 @@ const BOUNDS: Record<keyof BuyerProfile, [number, number] | null> = {
   term_years: [1, 40],
   weekly_rent: [0, 2_000],
   min_backyard_m2: [0, 5_000],
+  gross_income: [0, 5_000_000],
+  growth_pct: [-10, 20],
+  marginal_tax_rate: [0, 0.6],
+  rates_annual: [0, 50_000],
+  insurance_annual: [0, 50_000],
+  maintenance_pct: [0, 0.1],
+  management_pct: [0, 0.2],
+  vacancy_weeks: [0, 26],
+  interest_only_years: [0, 15],
+  horizon_years: [1, 40],
+  living_costs_monthly: [0, 50_000],
   require_garage: null,
   require_backyard: null,
   allow_townhouse: null,

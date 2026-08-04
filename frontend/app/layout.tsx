@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { CookieConsent } from "@/components/CookieConsent";
+import { YourNumbers } from "@/components/YourNumbers";
 
 export const metadata: Metadata = {
   title: "HouseScout — Christchurch",
@@ -39,6 +40,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   </Link>
                 ))}
               </nav>
+              {/* Every dollar on the site is worked out from these, so they belong
+                  in reach from every page rather than behind Settings. */}
+              <div className="ml-auto">
+                <YourNumbers />
+              </div>
             </div>
           </header>
           <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>

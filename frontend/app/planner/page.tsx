@@ -81,7 +81,7 @@ function Num({ label, value, onChange, step }: { label: string; value: number; o
   return (
     <label className="block">
       <span className="text-xs font-medium text-slate-500">{label}</span>
-      <input className="input mt-1" type="number" step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      <input className="input mt-1 w-full" type="number" step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
   );
 }

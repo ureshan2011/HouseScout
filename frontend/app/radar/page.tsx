@@ -99,7 +99,7 @@ export default function Radar() {
         <div className="card flex flex-wrap items-end gap-3 p-4">
           <label className="flex flex-col gap-1">
             <span className="text-xs font-medium text-slate-500">Minimum grade</span>
-            <select className="input" value={minGrade} onChange={(e) => setMinGrade(e.target.value)}>
+            <select className="input w-full" value={minGrade} onChange={(e) => setMinGrade(e.target.value)}>
               <option value="A">A only</option>
               <option value="B">B and above</option>
               <option value="C">C and above</option>

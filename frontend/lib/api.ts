@@ -334,6 +334,9 @@ function scenarioFor(d: DataSet, id: number, qs: string): Finance {
     bedrooms: l?.bedrooms ?? null,
     weekly_rent: num(p.get("weekly_rent")) ?? prof.weekly_rent,
     occupancy: num(p.get("occupancy")) ?? 1.0,
+    annual_rates_bill: prof.rates_annual,
+    annual_insurance: prof.insurance_annual,
+    annual_maintenance_pct: prof.maintenance_pct,
     reinvest_boarder_income: p.get("reinvest") !== "false",
   };
   return analyse(s);
@@ -435,6 +438,9 @@ export const api = {
       bedrooms: body.bedrooms,
       weekly_rent: body.weekly_rent ?? prof.weekly_rent,
       occupancy: body.occupancy ?? 1.0,
+      annual_rates_bill: prof.rates_annual,
+      annual_insurance: prof.insurance_annual,
+      annual_maintenance_pct: prof.maintenance_pct,
       reinvest_boarder_income: body.reinvest_boarder_income ?? true,
     });
   },

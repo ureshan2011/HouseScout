@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { fmt } from "@/lib/api";
-import { loadProfile } from "@/lib/criteria";
+import { useProfile, scenarioInput } from "@/lib/useProfile";
 import {
   Comparison,
   NZ,
@@ -38,47 +37,53 @@ type TabId = (typeof TABS)[number]["id"];
 
 export default function StrategyPage() {
   const [tab, setTab] = useState<TabId>("capacity");
-  const [f, setF] = useState<Inputs>({
-    price: 450_000,
-    nextPrice: 450_000,
-    deposit: 90_000,
-    annualRate: 0.055,
-    termYears: 30,
+  const profile = useProfile();
+
+  // Anything about the *property* being modelled is local to this page; anything
+  // about the *buyer* lives in the shared profile, so editing it here is editing
+  // it everywhere. A listing can hand its own price and rent over via the query
+  // string, so "model this property" lands here with the right numbers.
+  const [property, setProperty] = useState({
+    price: 0,
+    nextPrice: 0,
     bedrooms: 4,
-    roomWeeklyRent: 240,
     wholeHouseWeeklyRent: 620,
-    growthPct: 5,
-    grossIncome: 120_000,
-    years: 20,
-    interestOnlyYears: 5,
-    marginalTaxRate: 0.33,
+    roomRentOverride: 0,
+    growthOverride: 0,
   });
 
   useEffect(() => {
-    const p = loadProfile();
-    // A listing can hand its own numbers over via the query string, so "model this
-    // property" lands here with the right price and rent instead of the defaults.
     const q = new URLSearchParams(window.location.search);
     const n = (key: string) => {
       const v = Number(q.get(key));
-      return Number.isFinite(v) && v > 0 ? v : null;
+      return Number.isFinite(v) && v > 0 ? v : 0;
     };
-    const price = n("price");
-    setF((s) => ({
-      ...s,
-      price: price ?? p.preapproval ?? s.price,
-      nextPrice: price ?? p.preapproval ?? s.nextPrice,
-      deposit: p.deposit,
-      annualRate: p.annual_rate,
-      termYears: p.term_years,
-      roomWeeklyRent: n("room") ?? p.weekly_rent,
-      wholeHouseWeeklyRent: n("rent") ?? s.wholeHouseWeeklyRent,
-      bedrooms: n("beds") ?? s.bedrooms,
-      growthPct: n("growth") ?? s.growthPct,
+    setProperty((s) => ({
+      price: n("price") || s.price,
+      nextPrice: n("price") || s.nextPrice,
+      bedrooms: n("beds") || s.bedrooms,
+      wholeHouseWeeklyRent: n("rent") || s.wholeHouseWeeklyRent,
+      roomRentOverride: n("room"),
+      growthOverride: n("growth"),
     }));
   }, []);
 
-  const set = <K extends keyof Inputs>(k: K, v: Inputs[K]) => setF((s) => ({ ...s, [k]: v }));
+  const f: Inputs = useMemo(() => {
+    const price = property.price || profile.preapproval;
+    return {
+      ...scenarioInput(profile, {
+        price,
+        bedrooms: property.bedrooms,
+        wholeHouseWeeklyRent: property.wholeHouseWeeklyRent,
+        ...(property.roomRentOverride ? { roomWeeklyRent: property.roomRentOverride } : {}),
+        ...(property.growthOverride ? { growthPct: property.growthOverride } : {}),
+      }),
+      nextPrice: property.nextPrice || price,
+    };
+  }, [profile, property]);
+
+  const setProp = <K extends keyof typeof property>(k: K, v: (typeof property)[K]) =>
+    setProperty((s) => ({ ...s, [k]: v }));
 
   return (
     <div className="space-y-5">
@@ -90,23 +95,51 @@ export default function StrategyPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
-        <div className="card h-fit space-y-3 p-4 lg:sticky lg:top-20">
-          <Num label="Purchase price" value={f.price} onChange={(v) => set("price", v)} step={5000} />
-          <Num label="Deposit" value={f.deposit} onChange={(v) => set("deposit", v)} step={5000} />
-          <Num label="Household income (gross)" value={f.grossIncome} onChange={(v) => set("grossIncome", v)} step={5000} />
-          <Range label={`Rate ${(f.annualRate * 100).toFixed(2)}%`} min={0.03} max={0.1} step={0.0005} value={f.annualRate} onChange={(v) => set("annualRate", v)} />
-          <Range label={`Term ${f.termYears} yr`} min={10} max={30} step={1} value={f.termYears} onChange={(v) => set("termYears", v)} />
-          <Num label="Bedrooms" value={f.bedrooms} onChange={(v) => set("bedrooms", v)} step={1} />
-          <Num label="Room rent / week" value={f.roomWeeklyRent} onChange={(v) => set("roomWeeklyRent", v)} step={10} />
-          <Num label="Whole-house rent / week" value={f.wholeHouseWeeklyRent} onChange={(v) => set("wholeHouseWeeklyRent", v)} step={10} />
-          <Range label={`Capital growth ${f.growthPct}%/yr`} min={0} max={10} step={0.5} value={f.growthPct} onChange={(v) => set("growthPct", v)} />
-          <Range label={`Horizon ${f.years} yr`} min={5} max={30} step={1} value={f.years ?? 20} onChange={(v) => set("years", v)} />
-          <Num label="Next property price (today)" value={f.nextPrice} onChange={(v) => set("nextPrice", v)} step={10000} />
-          <Range label={`Interest-only period ${f.interestOnlyYears} yr`} min={0} max={10} step={1} value={f.interestOnlyYears ?? 5} onChange={(v) => set("interestOnlyYears", v)} />
-          <p className="border-t border-slate-100 pt-3 text-xs text-slate-400">
-            Seeded from your <Link href="/settings" className="underline">buyer profile</Link>.
-            Rates, insurance and maintenance use NZ defaults.
-          </p>
+        <div className="card h-fit space-y-4 p-4 lg:sticky lg:top-20">
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              The property
+            </h2>
+            <div className="mt-2 space-y-3">
+              <Num label="Purchase price" value={f.price} onChange={(v) => setProp("price", v)} step={5000} />
+              <Num label="Bedrooms" value={f.bedrooms} onChange={(v) => setProp("bedrooms", v)} step={1} />
+              <Num
+                label="Whole-house rent / week"
+                value={f.wholeHouseWeeklyRent}
+                onChange={(v) => setProp("wholeHouseWeeklyRent", v)}
+                step={10}
+              />
+              <Num
+                label="Next property price (today)"
+                value={f.nextPrice}
+                onChange={(v) => setProp("nextPrice", v)}
+                step={10000}
+              />
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100 pt-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Your numbers
+              </h2>
+              <span className="text-[11px] text-slate-400">used across the site</span>
+            </div>
+            <dl className="mt-2 space-y-1 text-xs">
+              <Fact k="Deposit" v={money(f.deposit)} />
+              <Fact k="Household income" v={money(profile.gross_income)} />
+              <Fact k="Interest rate" v={`${(profile.annual_rate * 100).toFixed(2)}%`} />
+              <Fact k="Loan term" v={`${profile.term_years} years`} />
+              <Fact k="Room rent" v={`${money(f.roomWeeklyRent)}/wk`} />
+              <Fact k="Growth" v={`${f.growthPct}% a year`} />
+              <Fact k="Horizon" v={`${f.years} years`} />
+            </dl>
+            <p className="mt-2 text-xs text-slate-500">
+              Change these with the{" "}
+              <strong className="whitespace-nowrap">💰 Your numbers</strong> button at the top of any
+              page — every figure here follows.
+            </p>
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -136,6 +169,15 @@ export default function StrategyPage() {
   );
 }
 
+function Fact({ k, v }: { k: string; v: string }) {
+  return (
+    <div className="flex justify-between gap-2">
+      <dt className="text-slate-500">{k}</dt>
+      <dd className="font-medium tabular-nums text-slate-800">{v}</dd>
+    </div>
+  );
+}
+
 // --------------------------------------------------------------------------- //
 // What you can borrow
 // --------------------------------------------------------------------------- //
@@ -147,6 +189,7 @@ function CapacityTab({ f }: { f: Inputs }) {
         deposit: f.deposit,
         annualRate: f.annualRate,
         termYears: f.termYears,
+        livingCostsMonthly: f.livingCostsMonthly,
       }),
     [f],
   );
@@ -157,6 +200,7 @@ function CapacityTab({ f }: { f: Inputs }) {
         deposit: f.deposit,
         annualRate: f.annualRate,
         termYears: f.termYears,
+        livingCostsMonthly: f.livingCostsMonthly,
         isInvestor: true,
       }),
     [f],
@@ -338,11 +382,11 @@ function CompareTab({ f }: { f: Inputs }) {
                     {i === 0 && <span className="badge mr-1 bg-emerald-100 text-emerald-800">top</span>}
                     {r.label}
                   </td>
-                  <td className="font-semibold">{fmt.money(r.netWorth)}</td>
-                  <td>{fmt.money(r.debt)}</td>
+                  <td className="font-semibold">{money(r.netWorth)}</td>
+                  <td>{money(r.debt)}</td>
                   <td>{r.properties}</td>
                   <td className={r.weeklyCashflow >= 0 ? "text-emerald-700" : "text-rose-700"}>
-                    {fmt.money(r.weeklyCashflow)}
+                    {money(r.weeklyCashflow)}
                   </td>
                   <td>{r.lvr}%</td>
                   <td>{r.debtFreeYear ? `yr ${r.debtFreeYear}` : "—"}</td>
@@ -369,8 +413,8 @@ function TradeoffCard({ r }: { r: Comparison }) {
       <h3 className="font-medium">{r.label}</h3>
       <p className="mt-1 text-sm text-slate-600">{r.tradeoff}</p>
       <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
-        <span>Interest paid <strong className="text-slate-700">{fmt.money(r.totalInterest)}</strong></span>
-        <span>Equity <strong className="text-slate-700">{fmt.money(r.equity)}</strong></span>
+        <span>Interest paid <strong className="text-slate-700">{money(r.totalInterest)}</strong></span>
+        <span>Equity <strong className="text-slate-700">{money(r.equity)}</strong></span>
       </div>
     </section>
   );
@@ -411,20 +455,20 @@ function EquityTab({ f }: { f: Inputs }) {
           {refi.year !== null ? (
             <div className="grid gap-3 sm:grid-cols-4">
               <Stat label="Ready in" value={`${refi.year} yr`} accent />
-              <Stat label="Releasable then" value={fmt.money(refi.usableEquity)} />
-              <Stat label="Deposit + costs needed" value={fmt.money(refi.needed)} />
-              <Stat label="Loan after top-up" value={fmt.money(refi.loanAfterRelease)} hint={`${refi.lvrAfterRelease}% LVR`} />
+              <Stat label="Releasable then" value={money(refi.usableEquity)} />
+              <Stat label="Deposit + costs needed" value={money(refi.needed)} />
+              <Stat label="Loan after top-up" value={money(refi.loanAfterRelease)} hint={`${refi.lvrAfterRelease}% LVR`} />
             </div>
           ) : (
             <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
-              At {f.growthPct}% growth this property never releases the {fmt.money(refi.needed)} needed
-              for a {fmt.money(f.nextPrice)} deposit inside {f.years} years. Lower the next purchase
+              At {f.growthPct}% growth this property never releases the {money(refi.needed)} needed
+              for a {money(f.nextPrice)} deposit inside {f.years} years. Lower the next purchase
               price, pay down faster, or wait for more growth.
             </p>
           )}
           <p className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
             The release is a bigger mortgage, not a windfall. You&apos;d go from{" "}
-            {fmt.money(f.price - f.deposit)} of debt to {fmt.money(refi.loanAfterRelease)} on this house
+            {money(f.price - f.deposit)} of debt to {money(refi.loanAfterRelease)} on this house
             alone, and the repayments come out of the same pay packet.
           </p>
         </section>
@@ -581,7 +625,7 @@ const BLOCK_LABEL: Record<string, string> = {
 /** "Over the DTI cap — $322k short on a $821k purchase". */
 function blockText(y: { blockedBy: string | null; blockedShortfall: number; nextPrice: number }) {
   if (!y.blockedBy) return "";
-  return `${BLOCK_LABEL[y.blockedBy]} — ${fmt.money(y.blockedShortfall)} short on a ${fmt.money(y.nextPrice)} purchase`;
+  return `${BLOCK_LABEL[y.blockedBy]} — ${money(y.blockedShortfall)} short on a ${money(y.nextPrice)} purchase`;
 }
 
 function PortfolioTab({ f }: { f: Inputs }) {
@@ -603,9 +647,9 @@ function PortfolioTab({ f }: { f: Inputs }) {
           <h2 className="mb-3 font-semibold">Where {f.years} years of recycling gets you</h2>
           <div className="grid gap-3 sm:grid-cols-4">
             <Stat label="Properties" value={String(sim.final.properties)} accent />
-            <Stat label="Portfolio value" value={fmt.money(sim.final.portfolioValue)} />
-            <Stat label="Debt" value={fmt.money(sim.final.debt)} hint={`${sim.final.lvr}% LVR`} />
-            <Stat label="Net worth" value={fmt.money(sim.final.netWorth)} />
+            <Stat label="Portfolio value" value={money(sim.final.portfolioValue)} />
+            <Stat label="Debt" value={money(sim.final.debt)} hint={`${sim.final.lvr}% LVR`} />
+            <Stat label="Net worth" value={money(sim.final.netWorth)} />
           </div>
           {sim.acquisitions.length === 0 && (
             <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
@@ -648,13 +692,13 @@ function PortfolioTab({ f }: { f: Inputs }) {
                 <tr key={y.year} className={`border-t border-slate-100 [&>td]:whitespace-nowrap [&>td]:pr-4 ${y.bought ? "bg-emerald-50" : ""}`}>
                   <td className="py-1.5">{y.year}</td>
                   <td>{y.properties}</td>
-                  <td>{fmt.money(y.portfolioValue)}</td>
-                  <td>{fmt.money(y.debt)}</td>
-                  <td className="font-medium">{fmt.money(y.netWorth)}</td>
+                  <td>{money(y.portfolioValue)}</td>
+                  <td>{money(y.debt)}</td>
+                  <td className="font-medium">{money(y.netWorth)}</td>
                   <td className={y.lvr > 80 ? "text-rose-700" : ""}>{y.lvr}%</td>
                   <td className={y.dti > NZ.dtiInvestor ? "text-rose-700" : ""}>{y.dti}</td>
                   <td className={y.weeklyCashflow < 0 ? "text-rose-700" : "text-emerald-700"}>
-                    {fmt.money(y.weeklyCashflow)}
+                    {money(y.weeklyCashflow)}
                   </td>
                   <td className="text-xs text-slate-500">
                     {y.bought ? <strong className="text-emerald-700">Bought {y.bought}</strong> : blockText(y)}
@@ -722,7 +766,7 @@ function StressTab({ f }: { f: Inputs }) {
             <tbody>
               <tr className="border-t border-slate-100 [&>td]:whitespace-nowrap [&>td]:pr-4">
                 <td className="py-2 font-medium">Today</td>
-                <td>{fmt.money(base.weeklyCashflow)}</td>
+                <td>{money(base.weeklyCashflow)}</td>
                 <td>—</td>
                 <td>{base.lvr}%</td>
                 <td><span className={`badge ${VERDICT_STYLE[base.verdict]}`}>{base.verdict}</span></td>
@@ -732,9 +776,9 @@ function StressTab({ f }: { f: Inputs }) {
                 <tr key={r.label} className="border-t border-slate-100 [&>td]:whitespace-nowrap [&>td]:pr-4">
                   <td className="py-2 font-medium">{r.label}</td>
                   <td className={r.weeklyCashflow < 0 ? "text-rose-700" : "text-emerald-700"}>
-                    {fmt.money(r.weeklyCashflow)}
+                    {money(r.weeklyCashflow)}
                   </td>
-                  <td className="text-slate-500">{fmt.money(r.cashflowDelta)}</td>
+                  <td className="text-slate-500">{money(r.cashflowDelta)}</td>
                   <td className={r.lvr > 80 ? "text-rose-700" : ""}>{r.lvr}%</td>
                   <td><span className={`badge ${VERDICT_STYLE[r.verdict]}`}>{r.verdict}</span></td>
                   <td className="hidden text-xs text-slate-500 md:table-cell">{r.note}</td>
@@ -765,16 +809,8 @@ function Num({ label, value, onChange, step }: { label: string; value: number; o
   return (
     <label className="block">
       <span className="text-xs font-medium text-slate-500">{label}</span>
-      <input className="input mt-1" type="number" step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      <input className="input mt-1 w-full" type="number" step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
   );
 }
 
-function Range({ label, value, onChange, min, max, step }: { label: string; value: number; onChange: (v: number) => void; min: number; max: number; step: number }) {
-  return (
-    <label className="block">
-      <span className="text-xs font-medium text-slate-500">{label}</span>
-      <input className="mt-1 w-full" type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
-    </label>
-  );
-}

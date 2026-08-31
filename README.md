@@ -1,4 +1,4 @@
-# 🏠 HouseScout — NZ House-Buying Intelligence
+# 🏠 HouseScout — NZ House-Buying Intelligence 
 
 A platform to find, analyse and finance a first home anywhere in **New Zealand**, built around one
 strategy: **buy under your cap with a garage + backyard, live in it, rent the spare rooms to

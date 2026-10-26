@@ -21,6 +21,7 @@ import os
 import re
 import sys
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -93,6 +94,13 @@ def download_photo(url: str, dest: Path, referer: str) -> bool:
         return False
 
 
+def days_on_market(listed) -> int | None:
+    """Whole days since a listing was published, when the source says (Trade Me does)."""
+    if not listed:
+        return None
+    return max((datetime.now() - listed).days, 0)
+
+
 def map_listing(it, slug: str, seq: int, referer: str) -> dict:
     d = it.to_dict()
     images = []
@@ -124,7 +132,7 @@ def map_listing(it, slug: str, seq: int, referer: str) -> dict:
         "floor_area_m2": d.get("floor_area_m2"),
         "property_type": d.get("property_type") or "house",
         "description": d.get("description"),
-        "days_on_market": None,
+        "days_on_market": days_on_market(d.get("listing_date")),
         "images": images,
         "enrichment": {
             "land_area_m2": enr.get("land_area_m2") or d.get("land_area_m2"),

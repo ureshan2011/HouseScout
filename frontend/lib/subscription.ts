@@ -10,6 +10,26 @@ export type Tier = "free" | "pro" | "investor";
 
 export const TIER_ORDER: Record<Tier, number> = { free: 0, pro: 1, investor: 2 };
 
+/**
+ * The tier every visitor gets without paying or holding a licence.
+ *
+ * `"free"` is the normal paywall. Set to `"pro"` and Buyer Pro is open to everyone —
+ * every `<Gate>` and `useFeature` follows, because both resolve through
+ * `effectiveTier()` below. Set back to `"free"` to restore the paywall; nothing else
+ * needs to change. A stored licence can only raise a visitor above this, never below.
+ */
+export const COMPLIMENTARY_TIER: Tier = "pro";
+
+/** A tier is included free when it sits at or below the complimentary baseline. */
+export function isComplimentary(tier: Tier): boolean {
+  return TIER_ORDER[tier] <= TIER_ORDER[COMPLIMENTARY_TIER];
+}
+
+/** The tier actually in force: the higher of what the visitor holds and the baseline. */
+export function effectiveTier(held: Tier): Tier {
+  return TIER_ORDER[held] >= TIER_ORDER[COMPLIMENTARY_TIER] ? held : COMPLIMENTARY_TIER;
+}
+
 export type Feature =
   | "valuation"          // modelled fair value + confidence band
   | "pricePosition"      // asking vs modelled value
@@ -121,10 +141,10 @@ export function tierFromLicence(licence: string): Tier | null {
 }
 
 export function getTier(): Tier {
-  if (typeof window === "undefined") return "free";
+  if (typeof window === "undefined") return effectiveTier("free");
   const stored = localStorage.getItem(LS_TIER);
-  if (stored === "pro" || stored === "investor" || stored === "free") return stored;
-  return "free";
+  if (stored === "pro" || stored === "investor" || stored === "free") return effectiveTier(stored);
+  return effectiveTier("free");
 }
 
 export function setTier(tier: Tier): void {
@@ -158,11 +178,11 @@ export function clearLicence(): void {
  * and honours `?licence=`, so a checkout can redirect back with the purchased tier.
  */
 export async function resolveEntitlement(): Promise<Tier> {
-  if (typeof window === "undefined") return "free";
+  if (typeof window === "undefined") return effectiveTier("free");
   const param = new URLSearchParams(window.location.search).get("licence");
   if (param) {
     const granted = applyLicence(param);
-    if (granted) return granted;
+    if (granted) return effectiveTier(granted);
   }
   return getTier();
 }

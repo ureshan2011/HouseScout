@@ -44,7 +44,7 @@ export function YourNumbers() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="relative flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-slate-300 px-3 py-1.5 text-left text-sm transition hover:border-slate-400 hover:bg-slate-50"
+        className="press relative flex min-h-[2.75rem] shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-slate-300 px-3 py-1.5 text-left text-sm transition hover:border-slate-400 hover:bg-slate-50"
         aria-haspopup="dialog"
       >
         <span aria-hidden>💰</span>
@@ -52,7 +52,8 @@ export function YourNumbers() {
           <span className="font-medium text-slate-900">{money(p.deposit)}</span>
           <span className="text-slate-500"> deposit · {(p.annual_rate * 100).toFixed(2)}%</span>
         </span>
-        <span className="sm:hidden font-medium text-slate-900">Your numbers</span>
+        {/* On a phone the header has room for one figure, not a sentence. */}
+        <span className="font-medium text-slate-900 sm:hidden">{money(p.deposit)}</span>
         {untouched && (
           <span
             className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-500"
@@ -65,18 +66,24 @@ export function YourNumbers() {
           containing block for position:fixed — rendering the overlay inside it
           would trap the panel in the header's box instead of the viewport. */}
       {open && mounted && createPortal(
-        <div className="fixed inset-0 z-[60] flex justify-end" role="dialog" aria-modal="true" aria-label="Your numbers">
+        <div className="fixed inset-0 z-[60] flex flex-col justify-end md:flex-row md:justify-end" role="dialog" aria-modal="true" aria-label="Your numbers">
           <button
             type="button"
             aria-label="Close"
-            className="absolute inset-0 bg-slate-900/30"
+            className="sheet-backdrop absolute inset-0 bg-slate-900/40 md:bg-slate-900/30"
             onClick={() => setOpen(false)}
           />
           {/* scroll-pt keeps the sticky header from landing on top of whatever
               was just scrolled to — without it, controls near the top of the
               viewport sit under the header and taps hit the header instead. */}
-          <div className="relative flex w-full max-w-md scroll-pt-24 flex-col overflow-y-auto bg-white shadow-xl">
-            <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4">
+          {/* A bottom sheet on phones (thumb-reachable, dismissed by tapping outside), a
+              side panel from `md` up. `dvh` so Safari's collapsing toolbars don't push the
+              Done button off screen. */}
+          <div className="sheet relative flex max-h-[92dvh] w-full scroll-pt-24 flex-col overflow-y-auto rounded-t-2xl bg-white shadow-xl md:max-h-none md:max-w-md md:rounded-none md:[animation:none]">
+            <div className="sticky top-0 z-20 flex justify-center bg-white pt-2 md:hidden" aria-hidden>
+              <span className="h-1.5 w-10 rounded-full bg-slate-300" />
+            </div>
+            <header className="sticky top-4 z-10 flex items-start justify-between gap-3 border-b border-slate-200 bg-white px-5 py-3 md:top-0 md:py-4">
               <div>
                 <h2 className="font-semibold">Your numbers</h2>
                 <p className="text-xs text-slate-500">
@@ -86,7 +93,7 @@ export function YourNumbers() {
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="rounded-md px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                className="press -mr-2 -mt-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                 aria-label="Close"
               >
                 ✕
@@ -201,7 +208,7 @@ export function YourNumbers() {
                 <button
                   type="button"
                   onClick={() => setShowAdvanced((v) => !v)}
-                  className="text-sm font-medium text-slate-600 underline decoration-dotted hover:text-slate-900"
+                  className="press -ml-1 min-h-[2.75rem] px-1 text-sm font-medium text-slate-600 underline decoration-dotted hover:text-slate-900"
                 >
                   {showAdvanced ? "Hide running costs and tax" : "Running costs and tax"}
                 </button>
@@ -285,7 +292,7 @@ export function YourNumbers() {
               </div>
             </div>
 
-            <footer className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 py-3">
+            <footer className="sticky bottom-0 flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3">
               <Link href="/settings" className="text-xs text-slate-500 underline hover:text-slate-800">
                 Filters &amp; plan settings
               </Link>
@@ -354,7 +361,7 @@ function Slider({
       <span className="mt-1.5 flex items-center gap-2">
         <input
           type="range"
-          className="h-6 min-w-0 flex-1 accent-brand"
+          className="min-w-0 flex-1 accent-brand"
           min={min}
           max={max}
           step={step}

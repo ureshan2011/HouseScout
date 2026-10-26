@@ -56,8 +56,8 @@ export default function Dashboard() {
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold">Top recommendations</h2>
           <div className="flex gap-3 text-sm">
-            <Link href="/radar" className="text-brand-dark hover:underline">Deal Radar →</Link>
-            <Link href="/listings" className="text-brand-dark hover:underline">View all →</Link>
+            <Link href="/radar" className="py-2.5 text-brand-dark hover:underline md:py-0">Deal Radar →</Link>
+            <Link href="/listings" className="py-2.5 text-brand-dark hover:underline md:py-0">View all →</Link>
           </div>
         </div>
         {top.length === 0 ? (

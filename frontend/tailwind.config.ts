@@ -9,6 +9,10 @@ const config: Config = {
       },
     },
   },
+  // iOS fires :hover on tap and leaves it stuck until the next tap elsewhere, so every
+  // `hover:` style would stay painted on whatever was touched last. This wraps them in
+  // @media (hover: hover), which touch devices don't match.
+  future: { hoverOnlyWhenSupported: true },
   plugins: [],
 };
 export default config;

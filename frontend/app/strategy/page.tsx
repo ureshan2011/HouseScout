@@ -82,6 +82,7 @@ export default function StrategyPage() {
     };
   }, [profile, property]);
 
+  const [propOpen, setPropOpen] = useState(false);
   const setProp = <K extends keyof typeof property>(k: K, v: (typeof property)[K]) =>
     setProperty((s) => ({ ...s, [k]: v }));
 
@@ -94,8 +95,27 @@ export default function StrategyPage() {
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
-        <div className="card h-fit space-y-4 p-4 lg:sticky lg:top-20">
+      {/* minmax(0,1fr), not the implicit `auto` track: otherwise a wide child (the
+          swipeable tab row, a table) stretches the column past the screen on a phone. */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <div className="card h-fit p-4 lg:sticky lg:top-20">
+          {/* Phones: the form folds to one summary line so the results are not a full
+              screen of inputs away. The sidebar is always open from `lg` up. */}
+          <button
+            type="button"
+            onClick={() => setPropOpen((v) => !v)}
+            aria-expanded={propOpen}
+            className="press flex min-h-[2.75rem] w-full items-center justify-between gap-3 text-left lg:hidden"
+          >
+            <span className="min-w-0">
+              <span className="block text-xs font-semibold uppercase tracking-wide text-slate-400">The property</span>
+              <span className="block truncate text-sm font-medium text-slate-900">
+                {money(f.price)} · {f.bedrooms} bed · {money(f.wholeHouseWeeklyRent)}/wk
+              </span>
+            </span>
+            <span className="shrink-0 text-sm font-medium text-brand-dark">{propOpen ? "Done" : "Edit"}</span>
+          </button>
+          <div className={propOpen ? "mt-4 space-y-4" : "hidden space-y-4 lg:block"}>
           <div>
             <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
               The property
@@ -140,15 +160,19 @@ export default function StrategyPage() {
               page — every figure here follows.
             </p>
           </div>
+          </div>
         </div>
 
         <div className="space-y-4">
-          <nav className="flex flex-wrap gap-1">
+          {/* Phones: one swipeable row of 44px tabs rather than pills wrapping onto
+              three lines. */}
+          <nav className="snap-row -mx-4 gap-1 px-4 md:mx-0 md:flex-wrap md:overflow-visible md:px-0" aria-label="Strategy sections">
             {TABS.map((t) => (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                aria-pressed={tab === t.id}
+                className={`press min-h-[2.75rem] whitespace-nowrap rounded-lg px-4 text-sm font-medium transition md:min-h-0 md:px-3 md:py-1.5 ${
                   tab === t.id ? "bg-brand text-white" : "bg-white text-slate-600 hover:bg-slate-100"
                 }`}
               >

@@ -80,7 +80,7 @@ export function TableView({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="text-xs font-medium text-slate-500 underline decoration-dotted hover:text-slate-800"
+        className="press -mx-1 min-h-[2.75rem] px-1 text-sm font-medium text-slate-500 underline decoration-dotted hover:text-slate-800 md:min-h-0 md:text-xs"
       >
         {open ? "Hide the numbers" : "Show the numbers"}
       </button>

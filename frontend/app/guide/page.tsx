@@ -324,7 +324,7 @@ export default function GuidePage() {
             <a
               key={s.id}
               href={`#${s.id}`}
-              className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-200"
+              className="press flex min-h-[2.75rem] items-center rounded-full bg-slate-100 px-4 text-sm font-medium text-slate-700 hover:bg-slate-200 md:min-h-0 md:px-3 md:py-1 md:text-xs"
             >
               {s.title}
             </a>

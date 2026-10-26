@@ -105,31 +105,62 @@ export function PropertyImage({
   );
 }
 
-/** Scrollable gallery for the detail page; falls back to a single placeholder. */
+/** Gallery for the detail page: a swipeable carousel on phones, a hero plus strip from `sm` up. */
 export function PropertyGallery({
   listing,
 }: {
   listing: Pick<Listing, "id" | "address" | "suburb" | "images">;
 }) {
   const photos = listing.images ?? [];
+  const [index, setIndex] = useState(0);
+
   if (photos.length <= 1) {
     return (
-      <div className="h-64 w-full overflow-hidden rounded-xl bg-slate-200 sm:h-80">
+      <div className="aspect-[4/3] w-full overflow-hidden rounded-xl bg-slate-200 sm:aspect-auto sm:h-80">
         <PropertyImage listing={listing} />
       </div>
     );
   }
+  const shown = photos.slice(0, 8);
   return (
     <div>
-      <div className="h-64 w-full overflow-hidden rounded-xl bg-slate-200 sm:h-80">
-        <PropertyImage listing={listing} />
+      {/* Phones: full-width slides that snap under the thumb. */}
+      <div className="relative sm:hidden">
+        <div
+          className="snap-row -mx-4 gap-0"
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            setIndex(Math.round(el.scrollLeft / el.clientWidth));
+          }}
+          role="region"
+          aria-label="Photos"
+          tabIndex={0}
+        >
+          {shown.map((_, i) => (
+            <div key={i} className="aspect-[4/3] w-full shrink-0 bg-slate-200" style={{ minWidth: "100%" }}>
+              <PropertyImage listing={listing} index={i} />
+            </div>
+          ))}
+        </div>
+        <span
+          className="pointer-events-none absolute bottom-2 right-3 rounded-full bg-black/55 px-2.5 py-1 text-xs font-medium tabular-nums text-white"
+          aria-live="polite"
+        >
+          {Math.min(index + 1, shown.length)} / {shown.length}
+        </span>
       </div>
-      <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-        {photos.slice(1, 6).map((p, i) => (
-          <div key={p.url} className="h-16 w-24 shrink-0 overflow-hidden rounded-lg bg-slate-200">
-            <PropertyImage listing={listing} index={i + 1} />
-          </div>
-        ))}
+
+      <div className="hidden sm:block">
+        <div className="h-80 w-full overflow-hidden rounded-xl bg-slate-200">
+          <PropertyImage listing={listing} />
+        </div>
+        <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+          {photos.slice(1, 6).map((p, i) => (
+            <div key={p.url} className="h-16 w-24 shrink-0 overflow-hidden rounded-lg bg-slate-200">
+              <PropertyImage listing={listing} index={i + 1} />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );

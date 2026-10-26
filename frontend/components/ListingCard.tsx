@@ -41,9 +41,11 @@ function WatchButton({ id }: { id: number }) {
         e.stopPropagation();
         setOn(toggleWatch(id));
       }}
-      className="absolute left-2 top-2 rounded-full bg-white/85 px-2 py-1 text-sm leading-none shadow-sm transition hover:bg-white"
+      className="press absolute left-1 top-1 flex h-11 w-11 items-center justify-center"
     >
-      {on ? "★" : "☆"}
+      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-base leading-none shadow-sm transition">
+        {on ? "★" : "☆"}
+      </span>
     </button>
   );
 }
@@ -55,9 +57,9 @@ export function ListingCard({ l }: { l: Listing }) {
   const price = displayPrice(l);
 
   return (
-    <div className="card relative overflow-hidden transition hover:shadow-md">
+    <div className="card relative overflow-hidden transition hover:shadow-md active:scale-[0.99]">
       <Link href={`/listings/${l.id}`} className="block">
-        <div className="relative h-40 w-full bg-slate-200">
+        <div className="relative aspect-[16/10] w-full bg-slate-200 sm:aspect-auto sm:h-40">
           <PropertyImage listing={l} />
           <span className={`badge absolute right-2 top-2 ${scoreColor(score)}`}>
             Score {score.toFixed(0)}

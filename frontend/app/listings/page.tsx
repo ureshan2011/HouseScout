@@ -118,6 +118,9 @@ export default function ListingsPage() {
   const [filters, setFilters] = useState<Filters>(EMPTY);
   const [showAll, setShowAll] = useState(false);
   const [view, setView] = useState<"grid" | "map">("grid");
+  // Phones show the filters as a bottom sheet rather than a card that pushes the
+  // listings several screens down. Has no effect from `md` up.
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const unlimited = useFeature("unlimitedListings");
   const profile = useProfile();
 
@@ -168,6 +171,17 @@ export default function ListingsPage() {
 
   const active = useMemo(() => activeCount(filters), [filters]);
 
+  useEffect(() => {
+    if (!filtersOpen) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setFiltersOpen(false);
+    window.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [filtersOpen]);
+
   // Suburbs are long-tailed — 40+ in one district, hundreds nationwide — so the list
   // is trimmed until asked for.
   const suburbOptions = suburbFacets;
@@ -176,25 +190,86 @@ export default function ListingsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Listings</h1>
-        <div className="flex rounded-lg border border-slate-300 text-sm">
+        <div className="flex overflow-hidden rounded-lg border border-slate-300 text-sm">
           <button
-            className={`px-3 py-1.5 ${view === "grid" ? "bg-brand text-white" : ""}`}
+            className={`min-h-[2.75rem] px-4 md:min-h-0 md:px-3 md:py-1.5 ${view === "grid" ? "bg-brand text-white" : ""}`}
             onClick={() => setView("grid")}
+            aria-pressed={view === "grid"}
           >
             Grid
           </button>
           <button
-            className={`px-3 py-1.5 ${view === "map" ? "bg-brand text-white" : ""}`}
+            className={`min-h-[2.75rem] px-4 md:min-h-0 md:px-3 md:py-1.5 ${view === "map" ? "bg-brand text-white" : ""}`}
             onClick={() => setView("map")}
+            aria-pressed={view === "map"}
           >
             Map
           </button>
         </div>
       </div>
 
-      <div className="card space-y-4 p-4">
+      {/* Phone search bar: search stays one tap away; everything else is in the sheet. */}
+      <div className="sticky top-[calc(env(safe-area-inset-top)+3.75rem)] z-20 -mx-4 flex gap-2 bg-slate-50/95 px-4 py-2 backdrop-blur md:hidden">
+        <input
+          className="input min-w-0 flex-1"
+          type="search"
+          enterKeyHint="search"
+          autoCapitalize="none"
+          autoCorrect="off"
+          value={filters.q}
+          onChange={(e) => set({ q: e.target.value })}
+          placeholder="Street, suburb or keyword"
+          aria-label="Search listings"
+        />
+        <button
+          type="button"
+          onClick={() => setFiltersOpen(true)}
+          aria-haspopup="dialog"
+          className="btn-ghost press relative shrink-0 gap-1.5 bg-white"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+            <path d="M4 6h16M7 12h10M10 18h4" />
+          </svg>
+          Filters
+          {active > 0 && (
+            <span className="rounded-full bg-brand px-1.5 text-xs font-semibold leading-5 text-white">{active}</span>
+          )}
+        </button>
+      </div>
+      <p className="px-0.5 text-sm text-slate-500 md:hidden" aria-live="polite">
+        {loading ? "Filtering…" : `${listings.length} match${listings.length === 1 ? "" : "es"}`}
+      </p>
+
+      <div
+        className={
+          filtersOpen
+            ? "!mt-0 fixed inset-0 z-[60] flex flex-col justify-end md:!mt-4 md:static md:block"
+            : "hidden md:block"
+        }
+        role={filtersOpen ? "dialog" : undefined}
+        aria-modal={filtersOpen ? true : undefined}
+        aria-label={filtersOpen ? "Filters" : undefined}
+      >
+        <button
+          type="button"
+          aria-label="Close filters"
+          className="sheet-backdrop absolute inset-0 bg-slate-900/40 md:hidden"
+          onClick={() => setFiltersOpen(false)}
+        />
+        <div className="card sheet relative max-h-[88dvh] space-y-4 overflow-y-auto rounded-b-none p-4 pb-0 md:max-h-none md:rounded-b-xl md:pb-4 md:[animation:none]">
+        <div className="-mx-4 -mt-4 mb-1 flex items-center justify-between border-b border-slate-200 px-4 py-2 md:hidden">
+          <h2 className="font-semibold">Filters</h2>
+          <button
+            type="button"
+            onClick={() => setFiltersOpen(false)}
+            aria-label="Close filters"
+            className="press -mr-2 flex h-11 w-11 items-center justify-center rounded-full text-slate-400"
+          >
+            ✕
+          </button>
+        </div>
         <div className="flex flex-wrap items-end gap-3">
-          <Field label="Search" className="min-w-[14rem] flex-1">
+          <Field label="Search" className="hidden min-w-[14rem] flex-1 md:flex">
             <input
               className="input w-full"
               value={filters.q}
@@ -203,7 +278,7 @@ export default function ListingsPage() {
               aria-label="Search listings"
             />
           </Field>
-          <Field label="Sort">
+          <Field label="Sort" className="w-full md:w-auto">
             <select className="input w-full" value={filters.sort} onChange={(e) => set({ sort: e.target.value })}>
               <option value="score">Best match</option>
               <option value="price">Price (low → high)</option>
@@ -215,10 +290,10 @@ export default function ListingsPage() {
           </Field>
         </div>
 
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="grid grid-cols-2 items-end gap-3 md:flex md:flex-wrap">
           <Field label="Min price">
             <input
-              className="input w-32"
+              className="input w-full md:w-32"
               inputMode="numeric"
               value={filters.minPrice}
               onChange={(e) => set({ minPrice: e.target.value })}
@@ -227,7 +302,7 @@ export default function ListingsPage() {
           </Field>
           <Field label="Max price">
             <input
-              className="input w-32"
+              className="input w-full md:w-32"
               inputMode="numeric"
               value={filters.maxPrice}
               onChange={(e) => set({ maxPrice: e.target.value })}
@@ -236,7 +311,7 @@ export default function ListingsPage() {
           </Field>
           <Field label="Min beds">
             <input
-              className="input w-24"
+              className="input w-full md:w-24"
               inputMode="numeric"
               value={filters.minBeds}
               onChange={(e) => set({ minBeds: e.target.value })}
@@ -245,7 +320,7 @@ export default function ListingsPage() {
           </Field>
           <Field label="Min baths">
             <input
-              className="input w-24"
+              className="input w-full md:w-24"
               inputMode="numeric"
               value={filters.minBaths}
               onChange={(e) => set({ minBaths: e.target.value })}
@@ -254,7 +329,7 @@ export default function ListingsPage() {
           </Field>
           <Field label="Min land (m²)">
             <input
-              className="input w-28"
+              className="input w-full md:w-28"
               inputMode="numeric"
               value={filters.minLand}
               onChange={(e) => set({ minLand: e.target.value })}
@@ -293,7 +368,7 @@ export default function ListingsPage() {
           />
         )}
 
-        <div className="flex flex-wrap items-center gap-4 border-t border-slate-200 pt-3">
+        <div className="flex flex-wrap items-center gap-x-4 border-t border-slate-200 pt-3">
           <Check
             label="Garage only"
             checked={filters.garageOnly}
@@ -311,7 +386,7 @@ export default function ListingsPage() {
             checked={filters.pricedOnly}
             onChange={(v) => set({ pricedOnly: v })}
           />
-          <span className="ml-auto flex items-center gap-3 text-sm text-slate-500">
+          <span className="ml-auto hidden items-center gap-3 text-sm text-slate-500 md:flex">
             {loading ? "Filtering…" : `${listings.length} match${listings.length === 1 ? "" : "es"}`}
             {active > 0 && (
               <button className="btn-ghost" onClick={() => setFilters(EMPTY)}>
@@ -319,6 +394,19 @@ export default function ListingsPage() {
               </button>
             )}
           </span>
+        </div>
+
+        {/* Pinned to the bottom of the sheet so applying is always one thumb-tap away. */}
+        <div className="sticky bottom-0 -mx-4 flex gap-2 border-t border-slate-200 bg-white px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:hidden">
+          {active > 0 && (
+            <button type="button" className="btn-ghost" onClick={() => setFilters(EMPTY)}>
+              Clear
+            </button>
+          )}
+          <button type="button" className="btn flex-1" onClick={() => setFiltersOpen(false)}>
+            {loading ? "Filtering…" : `Show ${listings.length} match${listings.length === 1 ? "" : "es"}`}
+          </button>
+        </div>
         </div>
       </div>
 
@@ -377,7 +465,7 @@ function Check({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-2 text-sm" title={title}>
+    <label className="flex min-h-[2.75rem] items-center gap-3 text-sm md:min-h-0 md:gap-2" title={title}>
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
       {label}
     </label>
@@ -421,7 +509,7 @@ function ChipGroup({
         {label}
         {selected.length > 0 && ` · ${selected.length} selected`}
       </span>
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-2 md:gap-1.5">
         {shown.map((o) => {
           const on = selected.includes(o.value);
           return (
@@ -430,7 +518,7 @@ function ChipGroup({
               type="button"
               aria-pressed={on}
               onClick={() => toggle(o.value)}
-              className={`rounded-full border px-2.5 py-1 text-xs transition ${
+              className={`press rounded-full border px-3.5 py-2 text-sm transition md:px-2.5 md:py-1 md:text-xs ${
                 on
                   ? "border-brand bg-brand text-white"
                   : "border-slate-300 text-slate-600 hover:border-slate-400"
@@ -442,12 +530,12 @@ function ChipGroup({
           );
         })}
         {remaining > 0 && onShowMore && (
-          <button type="button" className="px-2 py-1 text-xs text-brand-dark underline" onClick={onShowMore}>
+          <button type="button" className="px-2 py-2 text-sm text-brand-dark underline md:py-1 md:text-xs" onClick={onShowMore}>
             +{remaining} more
           </button>
         )}
         {selected.length > 0 && (
-          <button type="button" className="px-2 py-1 text-xs text-slate-500 underline" onClick={() => onChange([])}>
+          <button type="button" className="px-2 py-2 text-sm text-slate-500 underline md:py-1 md:text-xs" onClick={() => onChange([])}>
             Clear
           </button>
         )}

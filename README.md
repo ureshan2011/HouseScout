@@ -301,6 +301,12 @@ Insights page, and chat embeddings rebuilt from Settings.
 | **Buyer Pro** | $19/mo | Unlimited listings, modelled fair value, price position, negotiation room, growth forecast, Deal Radar, watchlist & compare, CSV export, printable reports |
 | **Investor** | $49/mo | Rate stress testing, portfolio modelling, equity projections |
 
+> **Buyer Pro is currently free for every visitor.** One constant controls it —
+> `COMPLIMENTARY_TIER` in `frontend/lib/subscription.ts`. It is the tier everyone gets
+> without a licence: `"pro"` opens Buyer Pro to all (the Investor features stay gated),
+> `"free"` restores the paywall. Every `<Gate>` and `useFeature` resolves through it, and a
+> licence can only raise a visitor above it, never below.
+
 **Billing is not live.** The site is a static export, so all gating is client-side: it is a
 product mechanism for building and testing the paywall, **not** a security boundary — anyone
 can unlock every tier from the browser console, and the underlying data sits in

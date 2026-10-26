@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { PLANS, Tier, applyLicence, clearLicence } from "@/lib/subscription";
+import { COMPLIMENTARY_TIER, PLANS, TIER_ORDER, Tier, applyLicence, clearLicence, isComplimentary } from "@/lib/subscription";
 import { useTier } from "@/components/Gate";
 
 export default function Pricing() {
@@ -24,16 +24,23 @@ export default function Pricing() {
       <header className="text-center">
         <h1 className="text-3xl font-bold">Plans</h1>
         <p className="mx-auto mt-2 max-w-2xl text-slate-600">
-          The free plan tells you what&apos;s on the market. The paid plans tell you what it&apos;s
-          worth, what to offer, and which listings are genuinely underpriced — all computed by
-          HouseScout&apos;s own valuation model, in your browser.
+          {COMPLIMENTARY_TIER === "free"
+            ? "The free plan tells you what's on the market. The paid plans tell you what it's worth, what to offer, and which listings are genuinely underpriced"
+            : "Scout tells you what's on the market. Buyer Pro tells you what it's worth, what to offer, and which listings are genuinely underpriced"}{" "}
+          — all computed by HouseScout&apos;s own valuation model, in your browser.
         </p>
+        {COMPLIMENTARY_TIER === "pro" && (
+          <p className="mx-auto mt-4 max-w-2xl rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
+            🎉 Buyer Pro is free for everyone right now — every feature below, no card, no sign-up.
+          </p>
+        )}
       </header>
 
       <div className="grid gap-4 md:grid-cols-3">
         {PLANS.map((plan) => {
           const current = tier === plan.tier;
           const featured = plan.tier === "pro";
+          const free = isComplimentary(plan.tier);
           return (
             <section
               key={plan.tier}
@@ -43,15 +50,22 @@ export default function Pricing() {
             >
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-bold">{plan.name}</h2>
-                {featured && <span className="badge bg-brand text-white">Most popular</span>}
+                {featured && (
+                  <span className="badge bg-brand text-white">
+                    {free && plan.priceMonthly > 0 ? "Free right now" : "Most popular"}
+                  </span>
+                )}
                 {current && !featured && <span className="badge bg-slate-200">Current</span>}
               </div>
               <p className="mt-1 text-sm text-slate-500">{plan.tagline}</p>
               <p className="mt-4">
                 <span className="text-3xl font-bold">
-                  {plan.priceMonthly === 0 ? "Free" : `$${plan.priceMonthly}`}
+                  {plan.priceMonthly === 0 || free ? "Free" : `$${plan.priceMonthly}`}
                 </span>
-                {plan.priceMonthly > 0 && <span className="text-sm text-slate-500">/month</span>}
+                {plan.priceMonthly > 0 && free && (
+                  <span className="ml-2 text-sm text-slate-400 line-through">${plan.priceMonthly}/month</span>
+                )}
+                {plan.priceMonthly > 0 && !free && <span className="text-sm text-slate-500">/month</span>}
               </p>
               <ul className="mt-4 flex-1 space-y-2 text-sm">
                 {plan.features.map((f) => (
@@ -63,7 +77,7 @@ export default function Pricing() {
                   </li>
                 ))}
               </ul>
-              <PlanButton plan={plan.tier} current={current} label={plan.cta} />
+              <PlanButton plan={plan.tier} current={current} included={free} label={plan.cta} />
             </section>
           );
         })}
@@ -85,7 +99,7 @@ export default function Pricing() {
           <button className="btn" onClick={redeem}>
             Redeem
           </button>
-          {tier !== "free" && (
+          {tier != null && TIER_ORDER[tier] > TIER_ORDER[COMPLIMENTARY_TIER] && (
             <button className="btn-ghost" onClick={() => { clearLicence(); setMsg("Reverted to the free plan."); }}>
               Switch to free
             </button>
@@ -117,9 +131,28 @@ export default function Pricing() {
   );
 }
 
-function PlanButton({ plan, current, label }: { plan: Tier; current: boolean; label: string }) {
+function PlanButton({
+  plan,
+  current,
+  included,
+  label,
+}: {
+  plan: Tier;
+  current: boolean;
+  included: boolean;
+  label: string;
+}) {
   const [done, setDone] = useState(false);
 
+  // Free for everyone: nothing to buy and nothing to switch away from, so the buttons
+  // would either do nothing or promise a downgrade that the baseline tier overrides.
+  if (included) {
+    return (
+      <button className="btn-ghost mt-4 w-full" disabled>
+        {plan === "free" ? "Included" : "Included — free for everyone"}
+      </button>
+    );
+  }
   if (current) {
     return (
       <button className="btn-ghost mt-4 w-full" disabled>

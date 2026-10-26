@@ -47,11 +47,11 @@ export default function Chat() {
         <h1 className="text-2xl font-bold">AI assistant</h1>
         <div className="flex items-center gap-2">
           {engine && <span className="badge bg-indigo-100 text-indigo-800">{engine.name}</span>}
-          <div className="flex rounded-lg border border-slate-300 text-sm">
-            <button className={`px-3 py-1.5 ${mode === "chat" ? "bg-brand text-white" : ""}`} onClick={() => setMode("chat")}>
+          <div className="flex overflow-hidden rounded-lg border border-slate-300 text-sm">
+            <button className={`min-h-[2.75rem] px-4 md:min-h-0 md:px-3 md:py-1.5 ${mode === "chat" ? "bg-brand text-white" : ""}`} onClick={() => setMode("chat")}>
               Listings
             </button>
-            <button className={`px-3 py-1.5 ${mode === "advisor" ? "bg-brand text-white" : ""}`} onClick={() => setMode("advisor")}>
+            <button className={`min-h-[2.75rem] px-4 md:min-h-0 md:px-3 md:py-1.5 ${mode === "advisor" ? "bg-brand text-white" : ""}`} onClick={() => setMode("advisor")}>
               Mortgage/Invest
             </button>
           </div>

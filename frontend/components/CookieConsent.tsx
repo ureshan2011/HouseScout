@@ -28,13 +28,17 @@ export function CookieConsent() {
   if (!show) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50 p-3 sm:p-4">
-      <div className="mx-auto flex max-w-3xl flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-lg sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-slate-600">
-          HouseScout uses only strictly-necessary local storage to remember your settings — no
-          tracking or advertising cookies. See our{" "}
-          <Link href="/cookies" className="text-brand-dark underline">Cookie Policy</Link> and{" "}
-          <Link href="/privacy" className="text-brand-dark underline">Privacy Policy</Link>.
+    // On phones this is a slim strip floating just above the tab bar (a full-width card
+    // covered a third of the screen and sat on top of the navigation); from `md` up it
+    // is the original bottom card.
+    <div
+      className="fixed inset-x-0 z-50 px-3 md:bottom-0 md:p-4"
+      style={{ bottom: "calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 0.5rem)" }}
+    >
+      <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-lg md:justify-between md:p-4">
+        <p className="text-xs text-slate-600 md:text-sm">
+          Only essential local storage to remember your settings — no tracking.{" "}
+          <Link href="/cookies" className="text-brand-dark underline">Details</Link>
         </p>
         <button className="btn shrink-0" onClick={dismiss}>
           Got it

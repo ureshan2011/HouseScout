@@ -17,6 +17,8 @@ import {
 } from "@/components/ValuationPanel";
 import { PrintReportButton } from "@/components/PrintReport";
 import { ListingScenarios } from "@/components/ListingScenarios";
+import { WATCHLIST_EVENT, isWatched, toggleWatch } from "@/lib/watchlist";
+import { useFeature } from "@/components/Gate";
 
 export default function ListingDetailClient() {
   const params = useParams<{ id: string }>();
@@ -55,14 +57,14 @@ export default function ListingDetailClient() {
   const land = l.enrichment?.land_area_m2 ?? l.land_area_m2;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="space-y-6 pb-16 md:pb-0">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">{l.address}</h1>
+          <h1 className="text-xl font-bold leading-tight sm:text-2xl">{l.address}</h1>
           <p className="text-slate-500">{l.suburb} · {l.property_type}</p>
         </div>
-        <div className="text-right">
-          <p className="text-2xl font-bold text-brand-dark">
+        <div className="sm:text-right">
+          <p className="text-3xl font-bold text-brand-dark sm:text-2xl">
             {price.estimated && (
               <span className="text-base font-normal text-slate-400">est. </span>
             )}
@@ -74,21 +76,23 @@ export default function ListingDetailClient() {
             </p>
           )}
           {l.score && <p className="text-sm text-slate-500">Match score {l.score.match_score.toFixed(0)}/100</p>}
-          <div className="mt-1 flex justify-end gap-2">
+          <div className="mt-1 flex gap-2 sm:justify-end">
             <DealBadge listing={l} />
           </div>
         </div>
       </div>
 
+      {/* Photos before the print/upsell row: on a phone the upsell used to push the
+          first photo a full screen down the page. */}
+      <PropertyGallery listing={l} />
+
       <div className="flex flex-wrap items-center gap-2">
         <PrintReportButton />
       </div>
 
-      <PropertyGallery listing={l} />
-
       <DataQualityNotice listing={l} />
 
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-4 md:grid-cols-3 md:gap-6">
         <Spec label="Bedrooms" value={l.bedrooms} />
         <Spec label="Bathrooms" value={l.bathrooms} />
         <Spec label="Garage" value={l.has_garage ? "Yes" : "No"} />
@@ -97,7 +101,7 @@ export default function ListingDetailClient() {
         <Spec label="Est. value" value={fmt.money(l.enrichment?.estimate_value)} />
       </div>
 
-      {l.description && <p className="text-sm leading-relaxed text-slate-700">{l.description}</p>}
+      {l.description && <Description text={l.description} />}
 
       {/* Score breakdown */}
       <section className="card p-4">
@@ -167,7 +171,84 @@ export default function ListingDetailClient() {
       </section>
 
       {l.url && (
-        <a href={l.url} target="_blank" rel="noreferrer" className="btn-ghost">View original listing ↗</a>
+        <a href={l.url} target="_blank" rel="noreferrer" className="btn-ghost hidden md:inline-flex">View original listing ↗</a>
+      )}
+
+      <ActionBar listingId={l.id} url={l.url} price={fmt.money(price.value)} estimated={price.estimated} />
+    </div>
+  );
+}
+
+/**
+ * Phone-only bar pinned above the tab bar. The two things you do with a listing —
+ * save it, and go to the real page to contact the agent — used to be (respectively)
+ * missing and the last element of a page several thousand pixels long.
+ */
+function ActionBar({ listingId, url, price, estimated }: { listingId: number; url?: string | null; price: string; estimated: boolean }) {
+  const { allowed } = useFeature("watchlist");
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const sync = () => setOn(isWatched(listingId));
+    sync();
+    window.addEventListener(WATCHLIST_EVENT, sync);
+    return () => window.removeEventListener(WATCHLIST_EVENT, sync);
+  }, [listingId]);
+
+  return (
+    <div
+      className="fixed inset-x-0 z-30 border-t border-slate-200 bg-white/95 px-4 py-2 backdrop-blur md:hidden print:hidden"
+      style={{ bottom: "calc(var(--tabbar-h) + env(safe-area-inset-bottom))" }}
+    >
+      <div className="mx-auto flex max-w-lg items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-lg font-bold leading-tight text-brand-dark">
+            {estimated && <span className="text-sm font-normal text-slate-400">est. </span>}
+            {price}
+          </p>
+        </div>
+        {allowed && (
+          <button
+            type="button"
+            aria-pressed={on}
+            aria-label={on ? "Remove from watchlist" : "Add to watchlist"}
+            onClick={() => setOn(toggleWatch(listingId))}
+            className="btn-ghost press h-11 w-11 shrink-0 p-0 text-xl leading-none"
+          >
+            {on ? "★" : "☆"}
+          </button>
+        )}
+        {url && (
+          <a href={url} target="_blank" rel="noreferrer" className="btn shrink-0">
+            View listing ↗
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Agent copy runs to dozens of lines; on a phone it folds to six until asked for. */
+function Description({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 380;
+  return (
+    <div>
+      <p
+        className={`whitespace-pre-line text-[15px] leading-relaxed text-slate-700 md:text-sm ${
+          long && !open ? "line-clamp-6 md:line-clamp-none" : ""
+        }`}
+      >
+        {text}
+      </p>
+      {long && (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="press mt-1 min-h-[2.75rem] text-sm font-medium text-brand-dark underline md:hidden"
+        >
+          {open ? "Show less" : "Read more"}
+        </button>
       )}
     </div>
   );

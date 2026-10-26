@@ -17,7 +17,10 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Callable
 
 from .base import NormalisedListing, Throttle, detect_garage, parse_int, parse_price
 from .regions import DEFAULT_REGION_KEYS, REGIONS, Region
@@ -64,6 +67,11 @@ class SiteConfig:
     # (the selectors are still the best starting point for repairing it) but skipped
     # by default so it cannot silently consume a CI runner and return nothing.
     enabled: bool = True
+    # Tile parser for a site whose tiles the generic per-field CSS selectors cannot
+    # read (Trade Me's attributes are unlabelled icons). Signature matches `_parse_card`.
+    parse_card: Callable | None = None
+    # Reads attributes the tile lacks off an opened detail page: `(page, item) -> None`.
+    parse_detail: Callable | None = None
 
     def location_for(self, region: Region) -> str:
         """This site's location path segment for a district.
@@ -72,6 +80,145 @@ class SiteConfig:
         ``Region.path``. A site with a different scheme overrides this.
         """
         return region.path
+
+
+_TM_LISTED_RE = re.compile(r"Listed\s+\w+,?\s+(\d{1,2})\s+([A-Za-z]{3})")
+_TM_NUM = r"(\d[\d,]*)"
+
+
+def _trademe_listed_date(text: str | None, today: datetime | None = None) -> datetime | None:
+    """'Listed Mon, 12 Oct' -> a datetime. The tile gives no year, so take the latest one
+    that is not in the future."""
+    m = _TM_LISTED_RE.search(text or "")
+    if not m:
+        return None
+    today = today or datetime.now()
+    for year in (today.year, today.year - 1):
+        try:
+            d = datetime.strptime(f"{m.group(1)} {m.group(2)} {year}", "%d %b %Y")
+        except ValueError:
+            return None
+        if d <= today:
+            return d
+    return None
+
+
+def _parse_trademe_card(card, cfg: SiteConfig, region: Region) -> NormalisedListing | None:
+    """Parse a Trade Me ``tm-property-premium-listing-card``.
+
+    The bed/bath/area row is unlabelled icons, but the list carries one aria-label that
+    spells it out ("2 bedrooms. 1 bathroom. floor area 78 meters square. land area 87
+    meters square."), which is what makes floor and land area distinguishable. A part
+    the tile lacks is simply absent from the label. Parking is not on the tile.
+    """
+    try:
+        href_el = card.query_selector("a[href]")
+        href = href_el.get_attribute("href") if href_el else None
+        if not href:
+            return None
+        path = href.split("?")[0]
+        url = path if path.startswith("http") else f"{cfg.base}{path}"
+        source_id = path.rstrip("/").split("/")[-1]
+
+        addr_el = card.query_selector("tm-property-search-card-address-subtitle")
+        parts = [p.strip() for p in ((addr_el.inner_text() if addr_el else "") or "").split(",")]
+        parts = [p for p in parts if p]
+        # Trade Me appends the district ("Christchurch City"); our addresses stop at the suburb.
+        if len(parts) > 2 and parts[-1].lower().startswith(region.name.lower()):
+            parts = parts[:-1]
+        address = ", ".join(parts) or None
+
+        label_el = card.query_selector("ul[aria-label]")
+        label = (label_el.get_attribute("aria-label") if label_el else "") or ""
+
+        def num(pattern: str) -> int | None:
+            m = re.search(pattern, label)
+            return int(m.group(1).replace(",", "")) if m else None
+
+        price_text = _txt(card, ["tm-property-search-card-price-attribute"])
+        title = _txt(card, ["tm-property-search-card-listing-title"])
+        listed = _txt(card, ["tm-property-search-card-listed-date"])
+        agent_el = card.query_selector("tm-agent")
+        agent = (agent_el.inner_text() or "").strip().split("\n")[0] if agent_el else None
+
+        # The first <img> is the agency logo; the property photo is served from /photoserver/.
+        photo = next(
+            (
+                i.get_attribute("src")
+                for i in card.query_selector_all("img")
+                if "photoserver" in (i.get_attribute("src") or "")
+            ),
+            None,
+        )
+
+        ptype = cfg.property_type
+        if "apartment" in path:
+            ptype = "apartment"
+        elif "townhouse" in path:
+            ptype = "townhouse"
+
+        return NormalisedListing(
+            source=cfg.name,
+            source_id=source_id,
+            url=url,
+            address=address,
+            region=region.key,
+            region_name=region.label,
+            price=parse_price(price_text),
+            price_text=price_text,
+            bedrooms=num(rf"{_TM_NUM}\s+bedroom"),
+            bathrooms=num(rf"{_TM_NUM}\s+bathroom"),
+            has_garage=detect_garage(title, None),
+            land_area_m2=float(v) if (v := num(rf"land area {_TM_NUM}")) else None,
+            floor_area_m2=float(v) if (v := num(rf"floor area {_TM_NUM}")) else None,
+            description=title,
+            agent=agent,
+            listing_date=_trademe_listed_date(listed),
+            property_type=ptype,
+            images=[photo] if photo else [],
+            raw_json={"href": path, "listed": listed},
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.debug("trademe card parse failed: %s", exc)
+        return None
+
+
+
+_TM_STAT_RE = {
+    "watchlisted": re.compile(r"([\d,]+)\s*\n\s*Watchlisted"),
+    "days_on_site": re.compile(r"([\d,]+)\s*\n\s*Days on site"),
+}
+_TM_DESC_END = ("Source: Please be aware", "No updates from the agent", "Local Schools")
+
+
+def _parse_trademe_detail(page, item: NormalisedListing) -> None:
+    """Fill the garage flag, description and demand stats (watchlist count, days on site) from a Trade Me listing page.
+
+    The tile has no parking field and the page has no structured one either: parking is
+    only ever mentioned in the agent's prose, so the description is what feeds
+    `detect_garage`. It sits between the details block and a "Source:" disclaimer; the
+    window stops there so other listings' text further down the page cannot leak in.
+    """
+    text = page.inner_text("body")
+    marker = "Ask about this image"
+    start = text.find(marker)
+    if start != -1:
+        ends = [i for i in (text.find(e, start) for e in _TM_DESC_END) if i != -1]
+        end = min(ends) if ends else start + 6000
+        prose = "\n".join(
+            ln.strip() for ln in text[start:end].splitlines()
+            if ln.strip() and ln.strip() != marker
+        )
+        if prose:
+            item.description = prose[:4000]
+            item.has_garage = item.has_garage or detect_garage(prose, None)
+    stats = {}
+    for key, rx in _TM_STAT_RE.items():
+        m = rx.search(text)
+        if m:
+            stats[key] = int(m.group(1).replace(",", ""))
+    if stats:
+        item.raw_json = {**(item.raw_json or {}), **stats}
 
 
 # Best-effort configs. Selectors are isolated here so site HTML changes are a
@@ -103,16 +250,13 @@ SITES: dict[str, SiteConfig] = {
             "/search?price_max={price_max}&sort_order=expirydesc&page={page}"
         ),
         base="https://www.trademe.co.nz",
-        card="[class*='tm-property-search-card'], [data-test='listing-card'], article",
-        sel={
-            "price": ["[class*='price']", "[data-test='price']"],
-            "address": ["[class*='address']", "[data-test='address']", "h3"],
-            "bedrooms": ["[class*='bedroom']", "[aria-label*='bedroom']"],
-            "bathrooms": ["[class*='bathroom']", "[aria-label*='bathroom']"],
-            "parking": ["[class*='parking']", "[aria-label*='parking']"],
-            "land": ["[class*='land']", "[class*='area']"],
-            "desc": ["[class*='subtitle']", "p"],
-        },
+        # Tiles are <tm-property-premium-listing-card> custom elements with no per-field
+        # classes, so they are read by `_parse_trademe_card`, not by the `sel` table.
+        card="tm-property-premium-listing-card",
+        sel={},
+        parse_card=_parse_trademe_card,
+        parse_detail=_parse_trademe_detail,
+        detail_limit=200,  # parking is only on the detail page, and the garage filter needs it
         browser="firefox",
     ),
     # DISABLED: the configured search path no longer exists. Probed 2026-08: the site
@@ -300,6 +444,11 @@ def scrape_site(
                 )
                 try:
                     page.goto(url, timeout=45_000, wait_until="domcontentloaded")
+                    try:
+                        # Client-rendered sites (Trade Me) fill the tiles in seconds after load.
+                        page.wait_for_selector(cfg.card, timeout=20_000)
+                    except Exception:  # noqa: BLE001 - no tiles: the cards check below reports it
+                        pass
                     page.wait_for_timeout(2000)
                     page.mouse.wheel(0, 4000)  # trigger lazy-loaded tiles
                     page.wait_for_timeout(800)
@@ -310,8 +459,9 @@ def scrape_site(
                 if not cards:
                     log.info("%s: no cards on page %d (blocked or selector drift)", cfg.name, page_no)
                     break
+                parse = cfg.parse_card or _parse_card
                 for card in cards:
-                    item = _parse_card(card, cfg, reg)
+                    item = parse(card, cfg, reg)
                     if item and item.address:
                         results.append(item)
 
@@ -322,12 +472,19 @@ def scrape_site(
                 try:
                     throttle.wait()
                     page.goto(item.url, timeout=45_000, wait_until="domcontentloaded")
+                    if cfg.parse_detail:
+                        try:
+                            page.wait_for_selector("text=Days on site", timeout=15_000)
+                        except Exception:  # noqa: BLE001 - parse what rendered
+                            pass
                     page.wait_for_timeout(1800)
                     page.mouse.wheel(0, 3000)
                     page.wait_for_timeout(700)
                     gallery = _collect_house_images(page, limit=6)
                     if gallery:
                         item.images = gallery
+                    if cfg.parse_detail:
+                        cfg.parse_detail(page, item)
                 except Exception as exc:  # noqa: BLE001
                     log.debug("%s detail failed for %s: %s", cfg.name, item.url, exc)
 

@@ -6,7 +6,7 @@ boarders, and pay the mortgage off as fast as possible.**
 
 Coverage and criteria are both **configuration, not code**: pick any of the 59 verified locations in
 [`scraper/regions.py`](scraper/regions.py) via `SCRAPE_REGIONS`, and set your budget, deposit, rate
-and hard filters on the app's **Settings** page. The defaults are a $500k Christchurch buyer, which
+and hard filters on the app's **Settings** page. The defaults are a single Christchurch buyer with a ~$600k budget and ~$115k deposit (Nov 2026), which
 is where the project started.
 
 It scrapes listings, self-hosts their photos, enriches them with free official **LINZ** land data,

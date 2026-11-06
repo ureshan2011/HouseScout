@@ -15,12 +15,13 @@ from .finance import rentable_rooms
 
 @dataclass
 class Criteria:
-    max_price: float = 500_000
-    preapproval: float = 480_000
+    # Mirrors FACTORY_DEFAULTS in frontend/lib/criteria.ts (Nov 2026 buyer profile).
+    max_price: float = 600_000
+    preapproval: float = 580_000
     require_garage: bool = True
     require_backyard: bool = True
-    min_backyard_m2: float = 50.0  # "at least a tiny backyard"
-    allow_townhouse: bool = True
+    min_backyard_m2: float = 300.0  # a real section, not just a yard
+    allow_townhouse: bool = False  # standalone freehold only
 
 
 # Component weights (sum = 100). Rentability dominates per the buyer's goal.

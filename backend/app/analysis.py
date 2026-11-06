@@ -333,12 +333,12 @@ def answer_about_listings(question: str, rows: list[dict]) -> dict:
 ADVISOR_KB: list[tuple[tuple[str, ...], str]] = [
     (
         ("fix", "term", "rate", "one year", "two year"),
-        "**Fixing your mortgage.** Short fixes (6mo–1yr) are currently the cheapest carded "
-        "rates and let you re-fix lower if the OCR keeps easing. A 2-year fix buys certainty if "
-        "you'd rather lock your budget. A common play: split the loan — fix part for 1 year to "
-        "capture falling rates, fix part for 2 years for stability, and keep a small "
-        "floating/offset portion to dump boarder income against. Talk to a mortgage broker "
-        "(free to you) before committing.",
+        "**Fixing your mortgage.** The OCR is 2.75% and the Reserve Bank has flagged further "
+        "increases, so the 1-year and 2-year fixes are close (~4.99% vs ~5.35% at the big banks "
+        "in Nov 2026) and re-fixing could cost more, not less. A 2-year fix buys certainty while "
+        "you build boarder income. A common play: split the loan between 1 and 2 years and keep "
+        "a small floating/offset portion to dump boarder income against. Stress-test at +1.5% "
+        "and talk to a mortgage broker (free to you) before committing.",
     ),
     (
         ("principal", "loan structure", "offset", "revolving", "pay it off"),

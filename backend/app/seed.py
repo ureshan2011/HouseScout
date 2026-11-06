@@ -33,12 +33,13 @@ SUBURBS = [
     ("Riccarton", 580_000, 600, 5.4, 30, 4.0, "Student rental hotspot; units common."),
 ]
 
-# Indicative June-2026 fixed mortgage rates (lowest across major banks).
+# Advertised fixed rates (owner-occupier, under 80% LVR) as at 4 Nov 2026. Only the
+# 1- and 2-year terms were available; OCR is 2.75% with further increases flagged.
 RATES = [
-    ("ASB", "6mo", 0.0449), ("BNZ", "6mo", 0.0449), ("Kiwibank", "6mo", 0.0449),
-    ("ASB", "1yr", 0.0465), ("BNZ", "1yr", 0.0465),
-    ("BNZ", "2yr", 0.0519), ("Westpac", "2yr", 0.0519),
-    ("Westpac", "3yr", 0.0529), ("Westpac", "4yr", 0.0539),
+    ("ANZ", "1yr", 0.0499), ("ASB", "1yr", 0.0499), ("BNZ", "1yr", 0.0499),
+    ("Kiwibank", "1yr", 0.0515), ("Westpac", "1yr", 0.0519),
+    ("Westpac", "2yr", 0.0529), ("ANZ", "2yr", 0.0535), ("ASB", "2yr", 0.0535),
+    ("BNZ", "2yr", 0.0535), ("Kiwibank", "2yr", 0.0539),
 ]
 
 # (address, suburb, lat, lng, price, beds, baths, cars, garage, land_m2, floor_m2,

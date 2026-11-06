@@ -29,12 +29,12 @@ class Settings(BaseSettings):
     linz_api_key: str = ""
 
     # Buyer profile
-    max_price: float = 500_000
-    preapproval: float = 480_000
-    deposit: float = 50_000
-    default_mortgage_rate: float = 0.0519
+    max_price: float = 600_000
+    preapproval: float = 580_000
+    deposit: float = 115_000
+    default_mortgage_rate: float = 0.0499
     default_term_years: int = 30
-    boarder_weekly_rent: float = 220
+    boarder_weekly_rent: float = 230
 
     # Scraper coverage. A comma-separated selection understood by
     # scraper.regions.resolve_regions: district keys ("christchurch-city,selwyn"), a

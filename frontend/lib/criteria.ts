@@ -40,29 +40,44 @@ export type BuyerProfile = {
   living_costs_monthly: number;
 };
 
-/** The values the app assumes until a buyer says otherwise. */
+/**
+ * The values the app assumes until a buyer says otherwise.
+ *
+ * Set for a single buyer: Christchurch house-hack on a standalone freehold house with
+ * land and a garage, living in it ~2 years then renting it out from Sri Lanka. Figures
+ * are as at Nov 2026 (ANZ 1-yr fixed 4.99%, REINZ Christchurch median ~$715k; the
+ * affordable stock with land sits in the $500-600k band).
+ */
 export const FACTORY_DEFAULTS: BuyerProfile = {
-  max_price: 500_000,
-  preapproval: 480_000,
-  deposit: 50_000,
-  annual_rate: 0.0519,
+  max_price: 600_000,
+  preapproval: 580_000,
+  // 20% of a ~$575k house, from ~$140k cash after keeping a ~$25k emergency buffer.
+  deposit: 115_000,
+  annual_rate: 0.0499,
   term_years: 30,
-  weekly_rent: 220,
+  weekly_rent: 230,
   require_garage: true,
   require_backyard: true,
-  min_backyard_m2: 50,
-  allow_townhouse: true,
-  gross_income: 120_000,
-  growth_pct: 5,
-  marginal_tax_rate: 0.33,
-  rates_annual: 3_200,
-  insurance_annual: 2_200,
+  // Land, not just a yard: the brief is a standalone house on a real section.
+  min_backyard_m2: 300,
+  // Standalone freehold only.
+  allow_townhouse: false,
+  // Lender-facing income: salaried income only. The second, contract income is left out
+  // until it is extended, so borrowing capacity is not overstated.
+  gross_income: 125_000,
+  // Stress-tested well below recent run rates; the Christchurch median rose 2-4% in the year.
+  growth_pct: 3.5,
+  // Tax on rental profit is at the top rate once both incomes count.
+  marginal_tax_rate: 0.39,
+  rates_annual: 3_700,
+  insurance_annual: 2_600,
   maintenance_pct: 0.01,
-  management_pct: 0,
+  // A property manager once the owner is overseas.
+  management_pct: 0.08,
   vacancy_weeks: 3,
   interest_only_years: 5,
-  horizon_years: 20,
-  living_costs_monthly: 2_400,
+  horizon_years: 15,
+  living_costs_monthly: 2_800,
 };
 
 // Bounds are sanity rails, not opinions: they stop a stray keystroke (or a stale

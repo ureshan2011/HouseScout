@@ -6,8 +6,8 @@ import { PayoffChart } from "@/components/PayoffChart";
 
 export default function Planner() {
   const [f, setF] = useState({
-    price: 449000, deposit: 50000, annual_rate: 0.0519, term_years: 30,
-    bedrooms: 3, weekly_rent: 220, occupancy: 1.0, reinvest_boarder_income: true,
+    price: 575000, deposit: 115000, annual_rate: 0.0499, term_years: 30,
+    bedrooms: 3, weekly_rent: 230, occupancy: 1.0, reinvest_boarder_income: true,
   });
   const [res, setRes] = useState<Finance | null>(null);
 

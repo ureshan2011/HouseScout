@@ -106,15 +106,18 @@ export const SUBURBS: Suburb[] = [
   { name: "Papanui", median_price: 490_000, median_rent_weekly: 480, rental_yield: 4.7, distance_cbd_km: 5, growth_5yr_pct: 5.0, notes: "Near Northlands Mall. Established area." },
 ];
 
-// Indicative June-2026 fixed mortgage rates (lowest across major banks).
+// Advertised fixed mortgage rates, owner-occupier under 80% LVR, as at 4 Nov 2026
+// (interest.co.nz). Only 1- and 2-year terms were available; the OCR is 2.75% and further
+// increases are flagged as likely, so treat these as a floor, not a forecast.
 export const RATES: MortgageRate[] = [
-  { bank: "ASB", term_label: "6mo", rate: 0.0449 },
-  { bank: "BNZ", term_label: "6mo", rate: 0.0449 },
-  { bank: "Kiwibank", term_label: "6mo", rate: 0.0449 },
-  { bank: "ASB", term_label: "1yr", rate: 0.0465 },
-  { bank: "BNZ", term_label: "1yr", rate: 0.0465 },
-  { bank: "BNZ", term_label: "2yr", rate: 0.0519 },
-  { bank: "Westpac", term_label: "2yr", rate: 0.0519 },
-  { bank: "Westpac", term_label: "3yr", rate: 0.0529 },
-  { bank: "Westpac", term_label: "4yr", rate: 0.0539 },
+  { bank: "ANZ", term_label: "1yr", rate: 0.0499 },
+  { bank: "ASB", term_label: "1yr", rate: 0.0499 },
+  { bank: "BNZ", term_label: "1yr", rate: 0.0499 },
+  { bank: "Kiwibank", term_label: "1yr", rate: 0.0515 },
+  { bank: "Westpac", term_label: "1yr", rate: 0.0519 },
+  { bank: "Westpac", term_label: "2yr", rate: 0.0529 },
+  { bank: "ANZ", term_label: "2yr", rate: 0.0535 },
+  { bank: "ASB", term_label: "2yr", rate: 0.0535 },
+  { bank: "BNZ", term_label: "2yr", rate: 0.0535 },
+  { bank: "Kiwibank", term_label: "2yr", rate: 0.0539 },
 ];

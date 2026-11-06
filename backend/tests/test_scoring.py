@@ -25,7 +25,7 @@ def test_fails_without_garage():
 
 
 def test_fails_over_budget():
-    ok, reasons = passes_hard_filters(base_listing(price=600_000), Criteria())
+    ok, reasons = passes_hard_filters(base_listing(price=650_000), Criteria())
     assert not ok and any("budget" in r for r in reasons)
 
 

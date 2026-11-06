@@ -144,7 +144,7 @@ const ADVISOR_KB: { match: RegExp; answer: string }[] = [
   {
     match: /fix.*(1|one).*(2|two)|how long.*fix|fix.*mortgage|term.*rate/,
     answer:
-      "**Fixing your mortgage (mid-2026 context).** Short fixes (6mo–1yr) are currently the cheapest carded rates (~4.49–4.65%) and let you re-fix lower if the OCR keeps easing. A 2-year fix (~5.19%) buys certainty if you'd rather lock your budget. A common play: split the loan — fix part for 1 year to capture falling rates, fix part for 2 years for stability, and keep a small floating/offset portion to dump boarder income against. Talk to a mortgage broker (free to you) before committing — this isn't personal financial advice.",
+      "**Fixing your mortgage (Nov 2026 context).** The OCR is 2.75% and the Reserve Bank has said further increases are likely, with markets pricing a good chance of a December rise. The big banks advertise ~4.99% for 1 year and ~5.35% for 2 years, so the 1-year is only slightly cheaper and re-fixing could cost more, not less. A 2-year fix buys certainty while you build the boarder income; a common play is to split the loan between 1 and 2 years and keep a small floating/offset portion to dump boarder income against. Stress-test at +1.5% before you commit, and talk to a mortgage broker (free to you) — this isn't personal financial advice.",
   },
   {
     match: /pay.*off.*fast|principal.*fast|loan structure|offset|revolving/,

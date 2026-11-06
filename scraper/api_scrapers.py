@@ -123,6 +123,24 @@ def _leading_int(text: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def land_m2(text: str) -> float | None:
+    """Land area in m² from tile text: "650m²", "1,243 m2", "4 ha", "2.5 hectares".
+
+    Tiles quote large blocks in hectares; reading only the leading number turned a
+    4-hectare block into 4 m².
+    """
+    m = re.match(r"\s*(\d[\d,]*(?:\.\d+)?)\s*(ha\b|hectares?|acres?)?", text or "", re.I)
+    if not m:
+        return None
+    value = float(m.group(1).replace(",", ""))
+    unit = (m.group(2) or "").lower()
+    if unit.startswith("ha") or unit.startswith("hect"):
+        value *= 10_000
+    elif unit.startswith("acre"):
+        value *= 4_046.86
+    return round(value) if value else None
+
+
 def _largest_image(tile: str) -> str | None:
     """The biggest photo variant offered in this tile, if any."""
     best: tuple[int, str] | None = None
@@ -237,7 +255,7 @@ def scrape_realestate_api(
             if price is not None and price > price_max:
                 continue
 
-            land = _leading_int(item.get("land_area") or "")
+            land = land_m2(item.get("land_area") or "")
             # Prefer the dedicated type element; fall back to the land-area text.
             type_text = (item.get("property_type") or item.get("land_area") or "").lower()
             ptype = next((t for t in PROPERTY_TYPES if t in type_text), "house")

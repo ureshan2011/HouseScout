@@ -4,7 +4,8 @@ import { townhouseShortlist } from "@/lib/townhouse";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
-import { loadModel, predict } from "@/lib/predict";
+import { Model, loadModel, predict } from "@/lib/predict";
+import { MarketIntel } from "@/components/dashboard/MarketIntel";
 import { useProfile } from "@/lib/useProfile";
 import { compactMoney, money } from "@/lib/viz";
 import {
@@ -58,13 +59,18 @@ export default function Dashboard() {
 
   // The date is read on the client only: the page is statically exported, so a date
   // baked in at build time would be wrong for every visitor after the first day.
+  const [model, setModel] = useState<Model | null>(null);
   useEffect(() => setNow(new Date()), []);
 
   // Scores depend on the buyer's numbers, so a change from the header re-runs this.
   useEffect(() => {
     let alive = true;
     Promise.all([loadAll(), loadModel()])
-      .then(([ls, m]) => alive && setRows(ls.map((l) => ({ l, p: predict(l, m) }))))
+      .then(([ls, m]) => {
+        if (!alive) return;
+        setModel(m);
+        setRows(ls.map((l) => ({ l, p: predict(l, m) })));
+      })
       .catch(() => alive && setFailed(true));
     return () => {
       alive = false;
@@ -210,6 +216,8 @@ export default function Dashboard() {
           />
 
           {d.spot && <Spotlight row={d.spot} brief={d.fits.some((r) => r.l.id === d.spot.l.id) ? "Fits your brief" : "Best value in reach"} />}
+
+          {model && <MarketIntel model={model} budget={d.budget} />}
 
           <div className="grid gap-4 lg:grid-cols-3">
             <PriceBands bands={d.bands} budget={d.budget} total={d.total} />

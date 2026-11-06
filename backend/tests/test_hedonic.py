@@ -363,3 +363,49 @@ def test_dataset_medians_ignore_missing_values():
     medians = hedonic.dataset_medians(corpus)
     assert 400 <= medians["land"] <= 600
     assert 90 <= medians["floor"] <= 130
+
+
+# --------------------------------------------------------------------------- #
+# v2: learned location
+# --------------------------------------------------------------------------- #
+def _market(n_per: int = 18) -> list[dict]:
+    """Synthetic market: Dearville homes are worth 40% more than Cheapton's."""
+    out = []
+    for i in range(n_per):
+        for suburb, region, base in (("Cheapton", "selwyn", 500_000), ("Dearville", "christchurch-city", 700_000)):
+            beds = 2 + i % 3
+            out.append(listing(
+                suburb=suburb, region=region, bedrooms=beds, bathrooms=1, land_area_m2=600,
+                price=float(round(base * math.exp(0.12 * (beds - 3)), -3)),
+                price_text=f"Asking price ${base:,}", source_id=f"{suburb}-{i}",
+            ))
+    return out
+
+
+def test_v2_learns_suburb_values_the_table_never_had():
+    homes = _market()
+    medians = hedonic.dataset_medians(homes)
+    model = hedonic.train_v2(homes, medians)
+    assert model is not None
+    subs = model["location"]["suburbs"]
+    assert subs["Dearville"] / subs["Cheapton"] > 1.25
+    loc = model["location"]
+    cheap = hedonic.predict_value(homes[0], model["coefficients"], medians, loc)
+    assert 420_000 < cheap < 580_000
+
+
+def test_v2_needs_enough_prices_before_it_replaces_v1():
+    homes = _market(n_per=3)
+    assert hedonic.train_v2(homes, hedonic.dataset_medians(homes)) is None
+
+
+def test_unknown_suburb_falls_back_to_its_district():
+    loc = {"city": 600_000, "districts": {"selwyn": 550_000}, "suburbs": {}}
+    assert hedonic.suburb_median("Nowhere", loc, "selwyn") == 550_000
+    assert hedonic.suburb_median("Nowhere", loc, None) == 600_000
+
+
+def test_floor_quotes_are_recognised():
+    assert hedonic.is_floor_price({"price_text": "Enquiries Over $390,000"})
+    assert hedonic.is_floor_price({"price_text": "Negotiable From $650,000"})
+    assert not hedonic.is_floor_price({"price_text": "Asking Price $499,000"})

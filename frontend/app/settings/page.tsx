@@ -109,6 +109,13 @@ export default function Settings() {
               label="Confidence"
               value={`${model.confidence}${model.cv_mae_pct != null ? ` (±${model.cv_mae_pct}% CV error)` : ""}`}
             />
+            {model.accuracy && (
+              <Stat
+                label="Out-of-sample accuracy"
+                value={`typical miss ${model.accuracy.median_ape_pct}% · ${model.accuracy.within_10_pct}% within 10%`}
+              />
+            )}
+            {model.cv_r2 != null && <Stat label="Cross-validated R²" value={model.cv_r2.toFixed(2)} />}
           </dl>
         )}
         <p className="mt-3 text-xs text-slate-500">

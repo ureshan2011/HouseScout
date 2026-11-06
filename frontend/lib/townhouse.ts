@@ -11,6 +11,8 @@ export type TownhouseCandidate = {
   description?: string | null;
   title?: string | null;
   price_text?: string | null;
+  /** Set at build time by scripts/clean_listings.py. */
+  new_build?: boolean | null;
 };
 
 export type TownhouseBrief = { maxPrice: number; newOnly: boolean };
@@ -20,8 +22,10 @@ export type TownhouseBrief = { maxPrice: number; newOnly: boolean };
 const NEW_BUILD = [
   /\bnew\s*-?\s*build/i,
   /\bnewly\s+(built|constructed|completed)/i,
-  /\bbrand[\s-]*new\b/i,
-  /\bnew\s+(townhouse|home|development|release|stage)/i,
+  // "brand-new" alone also describes kitchens and carpets; require a dwelling.
+  /\bbrand[\s-]*new\s+(?:[\w-]+,?\s+){0,2}(home|house|townhouse|dwelling|build|property)/i,
+  /\bnew\s+(townhouses?|developments?|subdivision|release|stage\s+\d)/i,
+  /\bquality\s+new\s+homes?\b/i,
   /\bbuilt\s+(in\s+)?(20(2[4-9]|3\d))\b/i,
   /\b(completed|completion)\s+(in\s+)?(20(2[4-9]|3\d)|early|mid|late|q[1-4])/i,
   /\b(off[\s-]*the[\s-]*plans?|to\s+be\s+built|under\s+construction|titles?\s+(issued|due))\b/i,
@@ -30,6 +34,7 @@ const NEW_BUILD = [
 ];
 
 export function looksNewBuild(l: TownhouseCandidate): boolean {
+  if (typeof l.new_build === "boolean") return l.new_build || NEW_BUILD.some((re) => re.test(`${l.title ?? ""} ${l.description ?? ""}`));
   const text = `${l.title ?? ""} ${l.description ?? ""}`;
   return NEW_BUILD.some((re) => re.test(text));
 }

@@ -15,6 +15,21 @@ const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
 export type SuburbStat = { median: number; yield: number; growth: number; cbd_km: number };
 
+export type ModelAccuracy = {
+  mae_pct: number;
+  median_ape_pct: number;
+  within_10_pct: number;
+  within_20_pct: number;
+};
+
+export type MarketIntel = {
+  reference: { value: number; bedrooms: number; bathrooms: number; floor_m2: number; land_m2: number };
+  districts: { district: string; value: number }[];
+  effects: { label: string; dollars: number }[];
+  ladder: { suburb: string; value: number; n: number }[];
+  floor_quote_premium_pct: number;
+};
+
 export type Model = {
   version: number;
   generated_at: string;
@@ -24,6 +39,13 @@ export type Model = {
   medians: { land: number; floor: number; bedrooms: number; bathrooms: number };
   city: { median: number; growth_pct: number };
   suburbs: Record<string, SuburbStat>;
+  /** v2: per-district reference values, the fallback for a suburb with no sales. */
+  districts?: Record<string, SuburbStat>;
+  /** v2: out-of-fold accuracy against published asking prices. */
+  accuracy?: ModelAccuracy;
+  cv_r2?: number | null;
+  /** v2: findings derived from the fitted model, for the homepage. */
+  intel?: MarketIntel;
   lambda: number | null;
   n_train: number;
   cv_mae_log: number | null;
@@ -93,6 +115,8 @@ export function loadModel(): Promise<Model> {
  */
 export type Predictable = {
   suburb?: string | null;
+  /** District key; the location fallback when a suburb has no sales of its own. */
+  region?: string | null;
   bedrooms?: number | null;
   bathrooms?: number | null;
   property_type?: string | null;
@@ -110,9 +134,10 @@ export type Predictable = {
   provenance?: { price?: string; record?: string } | null;
 };
 
-function suburbStat(m: Model, suburb?: string | null): SuburbStat {
+function suburbStat(m: Model, suburb?: string | null, region?: string | null): SuburbStat {
   return (
-    (suburb && m.suburbs[suburb]) || {
+    (suburb && m.suburbs[suburb]) ||
+    (region && m.districts?.[region]) || {
       median: m.city.median,
       yield: 5.0,
       growth: m.city.growth_pct,
@@ -138,7 +163,7 @@ function designRow(l: Predictable, m: Model): Record<string, number> {
   const ptype = (l.property_type || "house").toLowerCase();
   return {
     intercept: 1,
-    log_suburb_median: Math.log(suburbStat(m, l.suburb).median) - Math.log(m.city.median),
+    log_suburb_median: Math.log(suburbStat(m, l.suburb, l.region).median) - Math.log(m.city.median),
     bedrooms: (l.bedrooms ?? m.medians.bedrooms) - m.medians.bedrooms,
     bathrooms: (l.bathrooms ?? m.medians.bathrooms) - m.medians.bathrooms,
     log_land: Math.log1p(landOf(l, m)) - Math.log1p(m.medians.land),
@@ -148,6 +173,8 @@ function designRow(l: Predictable, m: Model): Record<string, number> {
     is_unit: ptype === "unit" ? 1 : 0,
     is_townhouse: ptype === "townhouse" ? 1 : 0,
     is_apartment: ptype === "apartment" ? 1 : 0,
+    is_section: ptype === "section" ? 1 : 0,
+    is_lifestyle: ptype === "lifestyle" ? 1 : 0,
   };
 }
 
@@ -185,6 +212,8 @@ const LABELS: Record<string, string> = {
   is_unit: "Unit (vs house)",
   is_townhouse: "Townhouse (vs house)",
   is_apartment: "Apartment (vs house)",
+  is_section: "Bare section (vs house)",
+  is_lifestyle: "Lifestyle block (vs house)",
 };
 
 /** Modelled figures are rounded to this; see ESTIMATE_ROUNDING in scripts/hedonic.py. */
@@ -205,6 +234,7 @@ export function valuation(l: Predictable, m: Model): Valuation {
   // same suburb: swap each feature to its median and see what the value does.
   const median: Predictable = {
     suburb: l.suburb,
+    region: l.region,
     bedrooms: m.medians.bedrooms,
     bathrooms: m.medians.bathrooms,
     land_area_m2: m.medians.land,
@@ -314,7 +344,7 @@ export type RentForecast = {
  * carries a premium over a simple divide-by-bedrooms.
  */
 export function rentForecast(l: Predictable, m: Model, v: Valuation): RentForecast {
-  const stat = suburbStat(m, l.suburb);
+  const stat = suburbStat(m, l.suburb, l.region);
   const value = l.price ?? l.price_estimate ?? v.estimate;
   const wholeHouseWeekly = (value * (stat.yield / 100)) / 52;
   const beds = l.bedrooms ?? m.medians.bedrooms;
@@ -350,7 +380,7 @@ const REVERSION = 0.82;
 const VOL = 0.075;
 
 export function growthForecast(l: Predictable, m: Model, v: Valuation, years = 10): GrowthForecast {
-  const stat = suburbStat(m, l.suburb);
+  const stat = suburbStat(m, l.suburb, l.region);
   const anchor = m.city.growth_pct;
   const start = l.price ?? l.price_estimate ?? v.estimate;
 

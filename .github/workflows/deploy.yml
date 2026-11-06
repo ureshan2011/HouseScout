@@ -5,7 +5,7 @@ name: Deploy to GitHub Pages
 #   2. Playwright scrapers (richer data) — one per source, different browser/IP
 #   3. Merge + dedupe
 #   4. Harvest photos + attributes from detail pages (scripts/detail_harvest.py)
-#   5. Train the valuation model (scripts/hedonic.py) -> public/model.json, and fill
+#   5. Clean listings (scripts/clean_listings.py), then train the valuation model (scripts/hedonic.py) -> public/model.json, and fill
 #      `price_estimate` for the listings that publish no price
 #   6. Annotate data provenance (scripts/provenance.py) so modelled figures are
 #      never presented as published ones
@@ -165,6 +165,12 @@ jobs:
       # listing. Never fatal: missing photos render generated artwork instead.
       - name: Harvest photos and attributes from detail pages
         run: python scripts/detail_harvest.py
+
+      # Fixes found in the live data: hectares stored as m², bare sections and
+      # lifestyle blocks typed as houses, attributes only stated in the description.
+      # Runs before training so the model never learns from mislabelled rows.
+      - name: Clean listings
+        run: python scripts/clean_listings.py
 
       # Trains on published prices only, then writes `price_estimate` for the 80%+ of
       # listings that publish none.

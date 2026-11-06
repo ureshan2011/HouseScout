@@ -149,6 +149,8 @@ FEATURES = [
     "is_unit",
     "is_townhouse",
     "is_apartment",
+    "is_section",
+    "is_lifestyle",
 ]
 
 # Documented priors, in log-price space (a coefficient of 0.06 ~= +6% per unit).
@@ -175,7 +177,25 @@ PRIORS: dict[str, float] = {
     "is_unit": -0.080,
     "is_townhouse": -0.100,
     "is_apartment": -0.130,
+    # Bare land and lifestyle blocks are different markets from a suburban house; these
+    # only matter because the scrape mixes them in (see scripts/clean_listings.py).
+    "is_section": -0.450,
+    "is_lifestyle": 0.200,
 }
+
+# Features held close to their documented prior whatever the sample says. Garage is
+# only known where the detail harvest reached the listing, and the type dummies rest on
+# a handful of rows each, so letting them float lets noise masquerade as signal.
+STIFF_FEATURES = {"has_garage", "is_unit", "is_townhouse", "is_apartment", "is_section", "is_lifestyle"}
+STIFF_LAMBDA = 25.0
+
+# "Enquiries over $X" / "Negotiable from $X" quote a floor, not the expected price. The
+# model learns how far above the floor such homes are valued and removes it when
+# valuing, so a floor quote does not drag the whole suburb down.
+FLOOR_PRICE_RE = re.compile(
+    r"(enquir\w*|offers?|negotiable|buyer\s+enquiry)\s+(over|from|above)|\bfrom\s+\$", re.I
+)
+FLOOR_PRICE_PRIOR = 0.04
 
 LAMBDA_GRID = [0.5, 1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 1000.0]
 
@@ -230,7 +250,23 @@ def ridge_to_prior(
 # --------------------------------------------------------------------------- #
 # Feature extraction
 # --------------------------------------------------------------------------- #
-def suburb_median(suburb: str | None) -> float:
+def suburb_median(
+    suburb: str | None, location: dict | None = None, region: str | None = None
+) -> float:
+    """Reference value of a standard house in this suburb.
+
+    With a trained ``location`` (from ``fit_location``) that is the value learned from
+    this scrape: the suburb's own effect, else its district's, else the city's. Without
+    one it is the legacy reference table, which is what an untrained build serves.
+    """
+    if location:
+        subs = location.get("suburbs", {})
+        if suburb and suburb in subs:
+            return subs[suburb]
+        dists = location.get("districts", {})
+        if region and region in dists:
+            return dists[region]
+        return location.get("city", CITY_MEDIAN)
     return SUBURB_STATS.get(suburb or "", {}).get("median", CITY_MEDIAN)
 
 
@@ -239,7 +275,9 @@ def land_of(listing: dict) -> float | None:
     return enr.get("land_area_m2") or listing.get("land_area_m2")
 
 
-def design_row(listing: dict, medians: dict[str, float]) -> list[float]:
+def design_row(
+    listing: dict, medians: dict[str, float], location: dict | None = None
+) -> list[float]:
     """Build one feature row, **centred** on a reference property.
 
     Every continuous feature is expressed as a deviation from the reference — a
@@ -265,7 +303,8 @@ def design_row(listing: dict, medians: dict[str, float]) -> list[float]:
     floor = listing.get("floor_area_m2") or medians["floor"]
     return [
         1.0,
-        math.log(suburb_median(listing.get("suburb"))) - math.log(CITY_MEDIAN),
+        math.log(suburb_median(listing.get("suburb"), location, listing.get("region")))
+        - math.log(location.get("city", CITY_MEDIAN) if location else CITY_MEDIAN),
         float(listing.get("bedrooms") or medians["bedrooms"]) - medians["bedrooms"],
         float(listing.get("bathrooms") or medians["bathrooms"]) - medians["bathrooms"],
         math.log1p(float(land)) - math.log1p(medians["land"]),
@@ -275,6 +314,8 @@ def design_row(listing: dict, medians: dict[str, float]) -> list[float]:
         1.0 if ptype == "unit" else 0.0,
         1.0 if ptype == "townhouse" else 0.0,
         1.0 if ptype == "apartment" else 0.0,
+        1.0 if ptype == "section" else 0.0,
+        1.0 if ptype == "lifestyle" else 0.0,
     ]
 
 
@@ -426,12 +467,241 @@ def train(listings: list[dict]) -> dict:
 
 # Modelled figures are rounded to this, because quoting an estimate to the dollar
 # ("$488,287") implies a precision the model does not have — its band is +/-16%.
+# --------------------------------------------------------------------------- #
+# Learned location (v2)
+# --------------------------------------------------------------------------- #
+#
+# v1 priced location off a hand-kept table of "sub-$500k segment" suburb medians. In
+# the Nov 2026 scrape 63% of listings sat in suburbs that table never covered (Rangiora,
+# Rolleston, Kaiapoi, Lincoln...), so they were all valued as an average Christchurch
+# home — the single largest source of error (cross-validated median miss 18%).
+#
+# v2 learns location from the asking prices themselves, hierarchically:
+#
+#     log(price) = city + district effect + suburb effect + physical features
+#
+# fitted by backfitting. Each district/suburb effect is an empirical-Bayes mean of
+# what is left after the physical features, shrunk toward its parent by a pseudo-count
+# (k): a suburb with two sales moves only part-way from its district, one with thirty
+# moves nearly all the way. The physical coefficients stay ridge-shrunk toward the
+# documented PRIORS. k and lambda are chosen by repeated, shuffled 5-fold CV.
+
+MIN_LOCATION_ROWS = 30
+LOCATION_GRID = [(lam, k) for lam in (1.0, 2.0, 5.0) for k in (2.0, 4.0, 8.0)]
+K_DISTRICT = 3.0
+LEGACY_TABLE_WEIGHT = 0.5  # how far an unseen legacy suburb sits from its district
+BACKFIT_ITERS = 8
+CV_SEEDS = 5
+
+
+def is_floor_price(listing: dict) -> bool:
+    return bool(FLOOR_PRICE_RE.search(listing.get("price_text") or ""))
+
+
+def _phys(row: list[float]) -> list[float]:
+    return row[2:]  # drop intercept + location
+
+
+PHYS_FEATURES = FEATURES[2:]
+
+
+def fit_location(rows: list[dict], lam: float, k_sub: float, k_dist: float = K_DISTRICT) -> dict:
+    """Backfit physical coefficients + floor premium + district/suburb effects.
+
+    ``rows``: dicts with ``x`` (physical features), ``y`` (log asking), ``d`` (district),
+    ``s`` (suburb), ``f`` (1 if the price is a floor quote).
+    """
+    names = PHYS_FEATURES + ["floor_price"]
+    prior = [PRIORS[f] for f in PHYS_FEATURES] + [FLOOR_PRICE_PRIOR]
+    lams = [STIFF_LAMBDA if f in STIFF_FEATURES else lam for f in PHYS_FEATURES] + [lam]
+    xs = [r["x"] + [r["f"]] for r in rows]
+    ys = [r["y"] for r in rows]
+    beta = list(prior)
+    mu, de, se = sum(ys) / len(ys), {}, {}
+    n, k = len(rows), len(names)
+    for _ in range(BACKFIT_ITERS):
+        resid = [ys[i] - sum(b * v for b, v in zip(beta, xs[i])) for i in range(n)]
+        mu = sum(resid) / n
+        groups: dict[str, list[int]] = {}
+        for i, r in enumerate(rows):
+            groups.setdefault(r["d"], []).append(i)
+        de = {d: sum(resid[i] - mu for i in idx) / (len(idx) + k_dist) for d, idx in groups.items()}
+        groups = {}
+        for i, r in enumerate(rows):
+            groups.setdefault(r["s"], []).append(i)
+        se = {
+            s: sum(resid[i] - mu - de[rows[i]["d"]] for i in idx) / (len(idx) + k_sub)
+            for s, idx in groups.items()
+        }
+        offset = [mu + de[r["d"]] + se[r["s"]] for r in rows]
+        xtx = [[0.0] * k for _ in range(k)]
+        xty = [0.0] * k
+        for i in range(n):
+            t = ys[i] - offset[i]
+            for a in range(k):
+                xty[a] += xs[i][a] * t
+                for c in range(k):
+                    xtx[a][c] += xs[i][a] * xs[i][c]
+        for a in range(k):
+            xtx[a][a] += lams[a]
+            xty[a] += lams[a] * prior[a]
+        beta = solve(xtx, xty) or beta
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r["s"]] = counts.get(r["s"], 0) + 1
+    return {
+        "mu": mu,
+        "districts": de,
+        "suburbs": se,
+        "beta": dict(zip(PHYS_FEATURES, beta[:-1])),
+        "floor_premium": beta[-1],
+        "suburb_n": counts,
+    }
+
+
+def _predict_log(fit: dict, r: dict, asking: bool) -> float:
+    d = fit["districts"].get(r["d"], 0.0)
+    s = fit["suburbs"].get(r["s"], 0.0)
+    phys = sum(fit["beta"][f] * v for f, v in zip(PHYS_FEATURES, r["x"]))
+    return fit["mu"] + d + s + phys + (fit["floor_premium"] * r["f"] if asking else 0.0)
+
+
+def _folds(n: int, seed: int, k: int = 5) -> list[set[int]]:
+    import random
+
+    idx = list(range(n))
+    random.Random(seed).shuffle(idx)
+    return [set(idx[f::k]) for f in range(k)]
+
+
+def cv_errors(rows: list[dict], lam: float, k_sub: float, seeds: int = CV_SEEDS) -> list[float]:
+    """Out-of-fold log errors against the published figure, over repeated shuffles."""
+    errs: list[float] = []
+    for seed in range(seeds):
+        for test in _folds(len(rows), seed):
+            train_rows = [r for i, r in enumerate(rows) if i not in test]
+            if len(train_rows) < 4:
+                continue
+            fit = fit_location(train_rows, lam, k_sub)
+            errs += [_predict_log(fit, rows[i], asking=True) - rows[i]["y"] for i in sorted(test)]
+    return errs
+
+
+def legacy_cv_errors(xs: list[list[float]], ys: list[float], seeds: int = CV_SEEDS) -> list[float]:
+    """The v1 model's out-of-fold errors on the same shuffles, for an honest comparison."""
+    prior = [PRIORS[f] for f in FEATURES]
+    errs: list[float] = []
+    for seed in range(seeds):
+        for test in _folds(len(ys), seed):
+            tx = [xs[i] for i in range(len(ys)) if i not in test]
+            ty = [ys[i] for i in range(len(ys)) if i not in test]
+            if len(tx) < 4:
+                continue
+            lam = min(LAMBDA_GRID, key=lambda l: kfold_mae(tx, ty, prior, l))
+            beta = ridge_to_prior(tx, ty, prior, lam)
+            errs += [sum(b * v for b, v in zip(beta, xs[i])) - ys[i] for i in sorted(test)]
+    return errs
+
+
+def error_summary(errs: list[float]) -> dict:
+    if not errs:
+        return {}
+    ape = sorted(abs(math.expm1(e)) for e in errs)
+    mae = sum(abs(e) for e in errs) / len(errs)
+    return {
+        "mae_log": round(mae, 4),
+        "mae_pct": round(math.expm1(mae) * 100, 1),
+        "median_ape_pct": round(ape[len(ape) // 2] * 100, 1),
+        "within_10_pct": round(sum(a <= 0.10 for a in ape) / len(ape) * 100),
+        "within_20_pct": round(sum(a <= 0.20 for a in ape) / len(ape) * 100),
+    }
+
+
+def location_table(fit: dict, all_listings: list[dict]) -> dict:
+    """Dollar values of a reference house by suburb/district, for model.json."""
+    city = math.exp(fit["mu"])
+    districts = {d: math.exp(fit["mu"] + e) for d, e in fit["districts"].items()}
+    suburb_region: dict[str, str] = {}
+    for l in all_listings:
+        if l.get("suburb") and l.get("region"):
+            suburb_region.setdefault(l["suburb"], l["region"])
+    suburbs: dict[str, float] = {}
+    ccc = fit["districts"].get("christchurch-city", 0.0)
+    for name, stat in SUBURB_STATS.items():
+        rel = math.log(stat["median"]) - math.log(CITY_MEDIAN)
+        suburbs[name] = math.exp(fit["mu"] + ccc + LEGACY_TABLE_WEIGHT * rel)
+    for name, region in suburb_region.items():
+        base = fit["mu"] + fit["districts"].get(region, 0.0)
+        suburbs[name] = math.exp(base + fit["suburbs"].get(name, 0.0)) if name in fit["suburbs"] else suburbs.get(name, math.exp(base))
+    for name, e in fit["suburbs"].items():
+        if name not in suburbs:
+            suburbs[name] = math.exp(fit["mu"] + e)
+    return {"city": city, "districts": districts, "suburbs": suburbs}
+
+
+def train_v2(listings: list[dict], medians: dict[str, float]) -> dict | None:
+    rows, legacy_x = [], []
+    for l in listings:
+        p = observed_price(l)
+        if p is None:
+            continue
+        x = design_row(l, medians)
+        rows.append({
+            "x": _phys(x), "y": math.log(p), "f": 1.0 if is_floor_price(l) else 0.0,
+            "d": l.get("region") or "unknown", "s": l.get("suburb") or "unknown",
+        })
+        legacy_x.append(x)
+    if len(rows) < MIN_LOCATION_ROWS:
+        return None
+
+    scored = []
+    for lam, k_sub in LOCATION_GRID:
+        errs = cv_errors(rows, lam, k_sub)
+        scored.append((sum(abs(e) for e in errs) / len(errs), lam, k_sub, errs))
+    best_mae, lam, k_sub, best_errs = min(scored, key=lambda t: t[0])
+
+    fit = fit_location(rows, lam, k_sub)
+    loc = location_table(fit, listings)
+    coefficients = {"intercept": math.log(loc["city"]), "log_suburb_median": 1.0, **fit["beta"]}
+
+    ys = [r["y"] for r in rows]
+    mean_y = sum(ys) / len(ys)
+    ss_tot = sum((y - mean_y) ** 2 for y in ys)
+    ss_res = sum((_predict_log(fit, r, asking=True) - r["y"]) ** 2 for r in rows)
+    cv_ss = sum(e * e for e in best_errs) / len(best_errs) * len(ys)
+
+    level, spread = confidence_band(len(rows), best_mae)
+    return {
+        "coefficients": coefficients,
+        "lambda": lam,
+        "k_suburb": k_sub,
+        "n_train": len(rows),
+        "cv_mae_log": round(best_mae, 4),
+        "cv_mae_pct": round(math.expm1(best_mae) * 100, 1),
+        "r2": round(1 - ss_res / ss_tot, 4) if ss_tot > 1e-12 else None,
+        "cv_r2": round(1 - cv_ss / ss_tot, 4) if ss_tot > 1e-12 else None,
+        "confidence": level,
+        "band": spread,
+        "fitted": True,
+        "floor_price_premium": round(fit["floor_premium"], 4),
+        "accuracy": error_summary(best_errs),
+        "baseline_accuracy": error_summary(legacy_cv_errors(legacy_x, ys)),
+        "location": loc,
+        "suburb_n": fit["suburb_n"],
+    }
+
+
 ESTIMATE_ROUNDING = 1_000
 
 
-def predict_value(listing: dict, coefficients: dict[str, float], medians: dict[str, float]) -> float:
+def predict_value(
+    listing: dict,
+    coefficients: dict[str, float],
+    medians: dict[str, float],
+    location: dict | None = None,
+) -> float:
     """Modelled market value for one listing, in dollars (unrounded)."""
-    row = design_row(listing, medians)
+    row = design_row(listing, medians, location)
     log_price = sum(coefficients[f] * v for f, v in zip(FEATURES, row))
     return math.exp(log_price)
 
@@ -442,7 +712,10 @@ def round_estimate(value: float) -> int:
 
 
 def write_price_estimates(
-    listings: list[dict], coefficients: dict[str, float], medians: dict[str, float]
+    listings: list[dict],
+    coefficients: dict[str, float],
+    medians: dict[str, float],
+    location: dict | None = None,
 ) -> int:
     """Attach ``price_estimate`` to every listing, in place.
 
@@ -457,9 +730,92 @@ def write_price_estimates(
     """
     for listing in listings:
         listing["price_estimate"] = round_estimate(
-            predict_value(listing, coefficients, medians)
+            predict_value(listing, coefficients, medians, location)
         )
     return sum(1 for l in listings if not l.get("price"))
+
+
+DISTRICT_LABELS = {
+    "christchurch-city": "Christchurch City",
+    "selwyn": "Selwyn",
+    "waimakariri": "Waimakariri",
+}
+# Rent and growth for suburbs the legacy table never covered: the district's typical
+# figures. Indicative, like the table itself.
+DISTRICT_DEFAULTS = {
+    "christchurch-city": {"yield": 4.8, "growth": 5.0, "cbd_km": 6.0},
+    "selwyn": {"yield": 4.3, "growth": 5.5, "cbd_km": 22.0},
+    "waimakariri": {"yield": 4.4, "growth": 5.0, "cbd_km": 25.0},
+}
+
+
+def suburb_payload(location: dict | None, listings: list[dict]) -> dict:
+    """Per-suburb stats for the browser: learned value + indicative yield/growth."""
+    if not location:
+        return SUBURB_STATS
+    region_of = {l["suburb"]: l.get("region") for l in listings if l.get("suburb")}
+    out = {}
+    for name, value in location["suburbs"].items():
+        legacy = SUBURB_STATS.get(name)
+        fallback = DISTRICT_DEFAULTS.get(region_of.get(name) or "christchurch-city", DISTRICT_DEFAULTS["christchurch-city"])
+        out[name] = {
+            "median": round(value, -3),
+            "yield": (legacy or fallback)["yield"],
+            "growth": (legacy or fallback)["growth"],
+            "cbd_km": (legacy or fallback)["cbd_km"],
+        }
+    return out
+
+
+def market_intel(model: dict, medians: dict[str, float]) -> dict:
+    """Plain-language findings derived from the fitted model, shown on the homepage."""
+    loc = model.get("location")
+    if not loc:
+        return {}
+    c = model["coefficients"]
+    ref = loc["city"]
+
+    def dollars(log_delta: float) -> int:
+        return int(round(ref * math.expm1(log_delta), -3))
+
+    floor_step = math.log1p(medians["floor"] + 20) - math.log1p(medians["floor"])
+    land_step = math.log1p(medians["land"] + 100) - math.log1p(medians["land"])
+    effects = [
+        {"label": "An extra bedroom", "dollars": dollars(c["bedrooms"])},
+        {"label": "An extra bathroom", "dollars": dollars(c["bathrooms"])},
+        {"label": "20 m² more floor area", "dollars": dollars(c["log_floor"] * floor_step)},
+        {"label": "100 m² more land", "dollars": dollars(c["log_land"] * land_step)},
+        {"label": "A garage", "dollars": dollars(c["has_garage"])},
+        {"label": "Townhouse instead of a house", "dollars": dollars(c["is_townhouse"])},
+    ]
+    n = model.get("suburb_n", {})
+    ladder = sorted(
+        (
+            {"suburb": s, "value": int(round(v, -3)), "n": n[s]}
+            for s, v in loc["suburbs"].items()
+            if n.get(s, 0) >= 3 and s not in DISTRICT_LABELS.values()
+        ),
+        key=lambda r: r["value"],
+    )
+    return {
+        "reference": {
+            "value": int(round(ref, -3)),
+            "bedrooms": medians["bedrooms"],
+            "bathrooms": medians["bathrooms"],
+            "floor_m2": medians["floor"],
+            "land_m2": medians["land"],
+        },
+        "districts": sorted(
+            (
+                {"district": DISTRICT_LABELS.get(d, d), "value": int(round(v, -3))}
+                for d, v in loc["districts"].items()
+            ),
+            key=lambda r: r["value"],
+        ),
+        "effects": effects,
+        "ladder": ladder,
+        "floor_quote_premium_pct": round(math.expm1(model.get("floor_price_premium", 0)) * 100, 1),
+    }
 
 
 def main() -> None:
@@ -473,30 +829,44 @@ def main() -> None:
             listings = []
 
     print("=== HouseScout valuation model ===")
-    model = train(listings)
     medians = dataset_medians(listings)
+    model = train_v2(listings, medians) or train(listings)
+    location = model.get("location")
 
     payload = {
-        "version": 1,
+        "version": 2 if location else 1,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "features": FEATURES,
         "priors": PRIORS,
         "medians": medians,
-        "city": {"median": CITY_MEDIAN, "growth_pct": CITY_GROWTH_PCT},
-        "suburbs": SUBURB_STATS,
-        **model,
+        "city": {"median": round(location["city"]) if location else CITY_MEDIAN, "growth_pct": CITY_GROWTH_PCT},
+        "suburbs": suburb_payload(location, listings),
+        "districts": (
+            {
+                d: {"median": round(v, -3), **DISTRICT_DEFAULTS.get(d, DISTRICT_DEFAULTS["christchurch-city"])}
+                for d, v in location["districts"].items()
+            }
+            if location
+            else {}
+        ),
+        "intel": market_intel(model, medians),
+        **{k: v for k, v in model.items() if k not in ("location", "suburb_n")},
     }
     OUT_JSON.write_text(json.dumps(payload, indent=2) + "\n")
 
-    # Fill the price gap for listings that publish no figure.
     if listings:
-        unpriced = write_price_estimates(listings, model["coefficients"], medians)
+        unpriced = write_price_estimates(listings, model["coefficients"], medians, location)
         LISTINGS_JSON.write_text(json.dumps(listings, indent=2) + "\n")
         print(f"  price estimates     : {len(listings)} written ({unpriced} with no published price)")
 
     print(f"  observed-price rows : {model['n_train']} of {len(listings)} listings")
-    print(f"  lambda (CV-chosen)  : {model['lambda']}")
+    print(f"  lambda (CV-chosen)  : {model['lambda']}" + (f", suburb k {model['k_suburb']}" if location else ""))
     print(f"  cross-val MAE       : {model['cv_mae_pct']}%" if model["cv_mae_pct"] else "  cross-val MAE       : n/a")
+    if location:
+        a, b = model["accuracy"], model["baseline_accuracy"]
+        print(f"  median miss         : {a['median_ape_pct']}% (v1 on the same cleaned data: {b['median_ape_pct']}%)")
+        print(f"  within 10% / 20%    : {a['within_10_pct']}% / {a['within_20_pct']}% (v1: {b['within_10_pct']}% / {b['within_20_pct']}%)")
+        print(f"  cross-val R^2       : {model['cv_r2']}")
     print(f"  in-sample R^2       : {model['r2']}")
     print(f"  confidence          : {model['confidence']} (+/-{model['band'] * 100:.0f}% band)")
     print(f"  wrote {OUT_JSON.relative_to(REPO_ROOT)}")

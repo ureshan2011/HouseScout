@@ -175,6 +175,30 @@ export default function Settings() {
             checked={profile.allow_townhouse}
             onChange={(v) => update({ allow_townhouse: v })}
           />
+          <ToggleField
+            label="Townhouse shortlist on the homepage"
+            hint="A separate rail of garaged townhouses under the cap below. “New” is inferred from the listing text."
+            checked={profile.townhouse_option}
+            onChange={(v) => update({ townhouse_option: v })}
+          />
+          {profile.townhouse_option && (
+            <>
+              <ToggleField
+                label="New builds only"
+                hint="Needs wording like “brand new” or “new build” in the listing."
+                checked={profile.townhouse_new_only}
+                onChange={(v) => update({ townhouse_new_only: v })}
+              />
+              <NumberField
+                label="Townhouse price cap"
+                hint="Published price, or the model's estimate."
+                prefix="$"
+                step={10_000}
+                value={profile.townhouse_max_price}
+                onChange={(v) => update({ townhouse_max_price: v })}
+              />
+            </>
+          )}
         </div>
 
         {!isDefault(profile) && (

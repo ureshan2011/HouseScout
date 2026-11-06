@@ -18,6 +18,12 @@ export type BuyerProfile = {
   require_backyard: boolean;
   min_backyard_m2: number;
   allow_townhouse: boolean;
+  /** Show a separate shortlist of townhouses on the homepage (see lib/townhouse.ts). */
+  townhouse_option: boolean;
+  /** Price ceiling for that shortlist. Independent of max_price. */
+  townhouse_max_price: number;
+  /** Only show townhouses whose listing text signals a new build. */
+  townhouse_new_only: boolean;
 
   // --- Everything the strategy engine used to assume on the buyer's behalf --- //
   /** Household income before tax. Drives the DTI and servicing tests. */
@@ -62,6 +68,10 @@ export const FACTORY_DEFAULTS: BuyerProfile = {
   min_backyard_m2: 300,
   // Standalone freehold only.
   allow_townhouse: false,
+  // Optional second brief: new-build townhouse with a garage, under $400k. Off until asked for.
+  townhouse_option: false,
+  townhouse_max_price: 400_000,
+  townhouse_new_only: true,
   // Lender-facing income: salaried income only. The second, contract income is left out
   // until it is extended, so borrowing capacity is not overstated.
   gross_income: 125_000,
@@ -91,6 +101,7 @@ const BOUNDS: Record<keyof BuyerProfile, [number, number] | null> = {
   term_years: [1, 40],
   weekly_rent: [0, 2_000],
   min_backyard_m2: [0, 5_000],
+  townhouse_max_price: [50_000, 10_000_000],
   gross_income: [0, 5_000_000],
   growth_pct: [-10, 20],
   marginal_tax_rate: [0, 0.6],
@@ -105,6 +116,8 @@ const BOUNDS: Record<keyof BuyerProfile, [number, number] | null> = {
   require_garage: null,
   require_backyard: null,
   allow_townhouse: null,
+  townhouse_option: null,
+  townhouse_new_only: null,
 };
 
 function coerce(input: Partial<BuyerProfile> | null | undefined): BuyerProfile {

@@ -1,5 +1,6 @@
 "use client";
 
+import { townhouseShortlist } from "@/lib/townhouse";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
@@ -95,6 +96,13 @@ export default function Dashboard() {
     // The spotlight should be something the buyer could plausibly afford.
     const spot = byDeal.find((r) => (effectivePrice(r.l) ?? Infinity) <= budget * 1.2) ?? byDeal[0];
 
+    const townhouses = profile.townhouse_option
+      ? townhouseShortlist(rows.map((r) => ({ ...r, ...r.l })), {
+          maxPrice: profile.townhouse_max_price,
+          newOnly: profile.townhouse_new_only,
+        })
+      : [];
+
     const roomy = rows
       .filter((r) => (r.l.bedrooms ?? 0) >= 4 && (effectivePrice(r.l) ?? Infinity) <= budget * 1.3)
       .sort((a, b) => (effectivePrice(a.l) ?? 0) - (effectivePrice(b.l) ?? 0));
@@ -115,6 +123,7 @@ export default function Dashboard() {
       byDeal,
       spot,
       roomy,
+      townhouses: townhouses.map((x) => ({ l: x.l, p: x.p }) as Row),
       bands: priceBands(prices, budget),
       suburbs: suburbRows(
         rows.map((r) => ({
@@ -125,7 +134,7 @@ export default function Dashboard() {
         })),
       ),
     };
-  }, [rows, now, profile.max_price]);
+  }, [rows, now, profile.max_price, profile.townhouse_option, profile.townhouse_max_price, profile.townhouse_new_only]);
 
   if (failed)
     return (
@@ -207,6 +216,25 @@ export default function Dashboard() {
             <SaleMethods counts={d.methods} total={d.total} />
             <SuburbValue rows={d.suburbs} />
           </div>
+
+          {profile.townhouse_option &&
+            (d.townhouses.length > 0 ? (
+              <Rail
+                title={`Townhouses under ${compactMoney(profile.townhouse_max_price)}`}
+                subtitle={`With a garage${profile.townhouse_new_only ? ", new builds (read from the listing text)" : ""} — cheapest first`}
+                href="/listings"
+                items={d.townhouses.slice(0, 8).map<RailItem>((r) => ({ row: r, tag: compactMoney(effectivePrice(r.l) ?? 0) }))}
+              />
+            ) : (
+              <section className="card p-5">
+                <h2 className="font-bold">No townhouses match yet</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  None of the {d.total} current listings is a{profile.townhouse_new_only ? " new-build" : ""} townhouse
+                  with a garage under {compactMoney(profile.townhouse_max_price)}.
+                  {profile.townhouse_new_only && " “New” is inferred from the listing text, so turning off new-only widens the net."}
+                </p>
+              </section>
+            ))}
 
           {d.fits.length > 0 ? (
             <Rail
